@@ -2348,6 +2348,46 @@ details.row .body .signal .why {
   fill: var(--ink, #111);
   font: 11px var(--font-mono, monospace);
 }
+/* Tiny per-edge value label at the segment midpoint; a white halo (paint-order) keeps it legible
+   where it crosses edges/nodes. Hidden when the toggle below is off. */
+.network-svg .edge-label {
+  fill: var(--ink-soft, #555);
+  font: 9px var(--font-mono, monospace);
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+/* Non-centre nodes are anchors → show the click affordance and an accent ring on hover/focus. */
+.network-svg a {
+  cursor: pointer;
+}
+.network-svg a:hover .node,
+.network-svg a:focus-visible .node {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+.network-svg a:focus-visible {
+  outline: none;
+}
+/* Edge-label toggle (pure CSS, no JS): unchecked hides every .edge-label. */
+.net-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font: 12px var(--font-mono, monospace);
+  color: var(--ink-soft, #555);
+  cursor: pointer;
+  user-select: none;
+}
+.net-toggle input {
+  accent-color: var(--accent);
+}
+.net-graph:has(.net-toggle input:not(:checked)) .edge-label {
+  display: none;
+}
 .net-legend {
   display: flex;
   flex-wrap: wrap;

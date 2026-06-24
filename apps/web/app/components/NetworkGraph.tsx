@@ -1,10 +1,13 @@
 import type { NetworkData, NetworkNode } from '@sigma/api-contract';
-import { money } from '@sigma/shared';
+import { count, money, moneyBare } from '@sigma/shared';
 
-// Static server-rendered radial ego graph (no chart JS, like SankeyDiagram). Centre in the middle,
+// Server-rendered radial ego graph (no chart JS, like SankeyDiagram). Centre in the middle,
 // direct counterparties on an inner ring, their top other counterparty on an outer ring. Node size is
-// the sum of incident edge values; edge thickness is the flow value. The accessible data is the
-// connections table beside it; this SVG is a visual summary (role="img" + aria-label).
+// the sum of incident edge values; edge thickness is the flow value. Non-centre nodes are SVG anchors
+// to `?center=<token>`, so a click re-centres the graph on that entity (lightweight SSR navigation —
+// the URL stays shareable and edge-cacheable). Each edge carries a tiny midpoint value label, toggled
+// on/off by a pure-CSS checkbox (no JS), plus value + contract count in its hover title. The accessible
+// data is the connections table beside it; this SVG is a visual summary (role="img" + aria-label).
 const W = 760;
 const H = 540;
 const CX = W / 2;
@@ -56,9 +59,18 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
   const strokeW = (v: number) => 1 + (v / maxEdge) * 5;
   const fill = (n: NetworkNode) =>
     n.hop === 0 ? CENTER_FILL : n.kind === 'authority' ? AUTH_FILL : COMP_FILL;
+  // The ?center= token that re-centres on this node — same grammar as the dropdown options
+  // (a:<authority-slug> | c:<company-slug>), parsed by parseCenter in routes/network.tsx.
+  const centerHref = (n: NetworkNode) => `?center=${n.kind === 'authority' ? 'a' : 'c'}:${n.slug}`;
 
   return (
-    <>
+    <div className="net-graph">
+      {/* Pure-CSS toggle: when unchecked, `.net-graph:has(input:not(:checked)) .edge-label` hides the
+          midpoint value labels — no client JS, so the graph stays server-rendered. Default on. */}
+      <label className="net-toggle">
+        <input type="checkbox" defaultChecked />
+        Стойности по връзките
+      </label>
       {/* Sankey-style horizontal scroll so the fixed-width graph does not squash on phones; the
           connections table below is the accessible fallback. */}
       <div className="flow-scroll">
@@ -72,16 +84,26 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
             const a = pos.get(e.from);
             const b = pos.get(e.to);
             if (!a || !b) return null;
+            const mx = (a.x + b.x) / 2;
+            const my = (a.y + b.y) / 2;
             return (
-              <line
-                key={`e${i}`}
-                className="edge"
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-                style={{ strokeWidth: strokeW(e.valueEur) }}
-              />
+              <g key={`e${i}`}>
+                <line
+                  className="edge"
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  style={{ strokeWidth: strokeW(e.valueEur) }}
+                >
+                  <title>{`${money(e.valueEur)} · ${count(e.contracts)} ${
+                    e.contracts === 1 ? 'договор' : 'договора'
+                  }`}</title>
+                </line>
+                <text className="edge-label" x={mx} y={my - 2} textAnchor="middle">
+                  {moneyBare(e.valueEur)}
+                </text>
+              </g>
             );
           })}
           {nodes.map((n) => {
@@ -89,35 +111,48 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
             if (!pt) return null;
             const r = radius(n);
             const right = pt.x >= CX;
-            const label = `${n.label}: ${money(n.valueEur)}`;
-            return (
-              <g key={n.id}>
-                {n.kind === 'company' ? (
-                  <rect
-                    className="node"
-                    x={pt.x - r}
-                    y={pt.y - r}
-                    width={r * 2}
-                    height={r * 2}
-                    rx={3}
-                    style={{ fill: fill(n) }}
-                  >
-                    <title>{label}</title>
-                  </rect>
-                ) : (
-                  <circle className="node" cx={pt.x} cy={pt.y} r={r} style={{ fill: fill(n) }}>
-                    <title>{label}</title>
-                  </circle>
-                )}
-                <text
-                  className="node-label"
-                  x={right ? pt.x + r + 4 : pt.x - r - 4}
-                  y={pt.y + 3}
-                  textAnchor={right ? 'start' : 'end'}
+            const isCenter = n.hop === 0;
+            const title = `${n.label}: ${money(n.valueEur)}`;
+            const shape =
+              n.kind === 'company' ? (
+                <rect
+                  className="node"
+                  x={pt.x - r}
+                  y={pt.y - r}
+                  width={r * 2}
+                  height={r * 2}
+                  rx={3}
+                  style={{ fill: fill(n) }}
                 >
-                  {truncate(n.label)}
-                </text>
+                  <title>{title}</title>
+                </rect>
+              ) : (
+                <circle className="node" cx={pt.x} cy={pt.y} r={r} style={{ fill: fill(n) }}>
+                  <title>{title}</title>
+                </circle>
+              );
+            const text = (
+              <text
+                className="node-label"
+                x={right ? pt.x + r + 4 : pt.x - r - 4}
+                y={pt.y + 3}
+                textAnchor={right ? 'start' : 'end'}
+              >
+                {truncate(n.label)}
+              </text>
+            );
+            // Centre node is the current focus → not a link. Every other node is an SVG anchor that
+            // re-centres the graph on it (native <a href> = accessible + keyboard-navigable for free).
+            return isCenter ? (
+              <g key={n.id}>
+                {shape}
+                {text}
               </g>
+            ) : (
+              <a key={n.id} href={centerHref(n)} aria-label={`Центрирай графа върху ${n.label}`}>
+                {shape}
+                {text}
+              </a>
             );
           })}
         </svg>
@@ -133,6 +168,6 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
           <span className="key company" /> Фирма
         </li>
       </ul>
-    </>
+    </div>
   );
 }

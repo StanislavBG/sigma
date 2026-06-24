@@ -150,7 +150,7 @@ export default function Network({ loaderData }: Route.ComponentProps) {
                   Връзки около <em>{data.center.label}</em>
                 </>
               }
-              hint="Цветовете различават център, институции и фирми. Дебелината на връзката е стойността."
+              hint="Цветовете различават център, институции и фирми. Дебелината на връзката е стойността. Клик върху възел центрира графа върху него."
             >
               <NetworkGraph data={data} />
             </Section>
