@@ -10,19 +10,20 @@
 import { spawn } from 'node:child_process';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import {
-  createWriteStream,
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
+  writeFileSync,
 } from 'node:fs';
 import http from 'node:http';
 import { dirname, join, resolve } from 'node:path';
-import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
-import { createGunzip } from 'node:zlib';
+import { gunzipSync } from 'node:zlib';
 import Database from 'better-sqlite3';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -139,51 +140,75 @@ function json(res, code, body) {
   res.end(JSON.stringify(body));
 }
 
-// ── POST /__ingest — publish a fresh corpus (operator-only) ───────────────────────────────────────
-async function handleIngest(req, res) {
+async function readBody(req) {
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  return Buffer.concat(chunks);
+}
+
+// ── POST /__ingest/{begin,chunk,commit} — publish a fresh corpus (operator-only) ──────────────────
+// Chunked because Replit's edge proxy rejects large request bodies (413). The corpus is uploaded in
+// small gzipped pieces appended to a temp file, then committed: validated as a real non-empty corpus,
+// atomically swapped onto disk, and the SSR child restarted to reopen it.
+async function handleIngest(req, res, path) {
   if (!TOKEN) return json(res, 503, { error: 'publishing disabled: DATA_PUSH_TOKEN not set' });
   if (!authorized(req)) return json(res, 401, { error: 'unauthorized' });
 
   const dbPath = mainDbPath();
   const incoming = `${dbPath}.incoming`;
-  try {
-    // Body is the gzipped SQLite (streamed straight to disk — never buffered in memory).
-    await pipeline(req, createGunzip(), createWriteStream(incoming));
-  } catch (err) {
-    rmSync(incoming, { force: true });
-    return json(res, 400, { error: `upload failed: ${err.message}` });
+
+  if (path === '/__ingest/begin') {
+    mkdirSync(dirname(incoming), { recursive: true });
+    writeFileSync(incoming, Buffer.alloc(0)); // truncate any partial upload
+    return json(res, 200, { ok: true });
   }
 
-  // Validate it is a real, non-empty corpus before swapping it in. Reject anything else.
-  let contracts = 0;
-  let authorities = 0;
-  try {
-    const db = new Database(incoming, { readonly: true, fileMustExist: true });
-    contracts = db.prepare('SELECT count(*) AS c FROM contracts').get().c;
-    authorities = db.prepare('SELECT count(*) AS c FROM authorities').get().c;
-    db.close();
-  } catch (err) {
-    rmSync(incoming, { force: true });
-    return json(res, 422, { error: `not a valid corpus: ${err.message}` });
-  }
-  if (!(contracts > 0 && authorities > 0)) {
-    rmSync(incoming, { force: true });
-    return json(res, 422, { error: 'refused: corpus is empty', contracts, authorities });
+  if (path === '/__ingest/chunk') {
+    try {
+      let buf = await readBody(req);
+      if (req.headers['content-encoding'] === 'gzip') buf = gunzipSync(buf);
+      appendFileSync(incoming, buf);
+    } catch (err) {
+      return json(res, 400, { error: `chunk failed: ${err.message}` });
+    }
+    return json(res, 200, { ok: true, size: existsSync(incoming) ? statSync(incoming).size : 0 });
   }
 
-  // Atomic-ish swap: stop the SSR child so it releases the file, replace it (+ drop stale wal/shm),
-  // restart, and wait until it serves again.
-  restarting = true;
-  await stopChild();
-  for (const suffix of ['', '-wal', '-shm', '-journal'])
-    rmSync(`${dbPath}${suffix}`, { force: true });
-  renameSync(incoming, dbPath);
-  restarting = false;
-  startChild();
-  const ready = await waitReady();
+  if (path === '/__ingest/commit') {
+    if (!existsSync(incoming)) return json(res, 400, { error: 'no upload in progress' });
+    // Validate it is a real, non-empty corpus before swapping it in. Reject anything else.
+    let contracts = 0;
+    let authorities = 0;
+    try {
+      const db = new Database(incoming, { readonly: true, fileMustExist: true });
+      contracts = db.prepare('SELECT count(*) AS c FROM contracts').get().c;
+      authorities = db.prepare('SELECT count(*) AS c FROM authorities').get().c;
+      db.close();
+    } catch (err) {
+      rmSync(incoming, { force: true });
+      return json(res, 422, { error: `not a valid corpus: ${err.message}` });
+    }
+    if (!(contracts > 0 && authorities > 0)) {
+      rmSync(incoming, { force: true });
+      return json(res, 422, { error: 'refused: corpus is empty', contracts, authorities });
+    }
 
-  console.log(`[serve] published corpus: ${contracts} contracts, ${authorities} authorities`);
-  return json(res, ready ? 200 : 502, { ok: ready, contracts, authorities });
+    // Atomic-ish swap: stop the SSR child so it releases the file, replace it (+ drop stale wal/shm),
+    // restart, and wait until it serves again.
+    restarting = true;
+    await stopChild();
+    for (const suffix of ['', '-wal', '-shm', '-journal'])
+      rmSync(`${dbPath}${suffix}`, { force: true });
+    renameSync(incoming, dbPath);
+    restarting = false;
+    startChild();
+    const ready = await waitReady();
+
+    console.log(`[serve] published corpus: ${contracts} contracts, ${authorities} authorities`);
+    return json(res, ready ? 200 : 502, { ok: ready, contracts, authorities });
+  }
+
+  return json(res, 400, { error: 'unknown phase; use /__ingest/{begin,chunk,commit}' });
 }
 
 // ── reverse proxy everything else to the SSR child ────────────────────────────────────────────────
@@ -211,7 +236,8 @@ function proxy(req, res) {
 
 const server = http.createServer((req, res) => {
   const path = (req.url || '').split('?')[0];
-  if (req.method === 'POST' && path === '/__ingest') return void handleIngest(req, res);
+  if (req.method === 'POST' && path.startsWith('/__ingest'))
+    return void handleIngest(req, res, path);
   return void proxy(req, res);
 });
 // 1.7 GB uploads take a while; don't let Node time them out.

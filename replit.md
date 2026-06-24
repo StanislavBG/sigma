@@ -77,7 +77,8 @@ pnpm run replit:refresh        # = import --catchup  +  replit:publish
 ```
 
 `scripts/replit-publish.mjs` reads `SIGMA_PUBLISH_URL` / `DATA_PUSH_TOKEN` from `.env.local`, locates the
-served D1, and streams it gzipped to the endpoint (no 1.7 GB buffered in memory). A publish briefly
+served D1, and uploads it in **small gzipped chunks** (`/__ingest/begin` → many `/chunk` → `/commit`) —
+Replit's edge proxy 413s on large request bodies, so a single upload won't work. A publish briefly
 restarts the SSR child while the file swaps. Per the project rule: full backfill **once**, catch-up only
 after — never re-import the whole corpus.
 
