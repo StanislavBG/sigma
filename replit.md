@@ -47,44 +47,47 @@ in `.replit`), which has a persistent disk. Autoscale would lose the file betwee
    representative-but-partial data. Best for first boot / UI work.
 2. **Full corpus** — built locally and pushed over SSH; see the runbook next.
 
-### Production runbook: local ETL → rsync → online (the chosen flow)
+### Production runbook: local ETL → token publish → online (the chosen flow)
 
-The corpus is built and refreshed **on your local machine**, then pushed to the Repl over SSH. rsync
-sends only changed SQLite pages, so steady-state refreshes are cheap. (Decision: rsync-over-SSH, 2026.)
+The corpus is built/refreshed **on your local machine** and published to the live site over HTTPS to a
+token-protected endpoint. Only this machine holds `DATA_PUSH_TOKEN`, so only this machine can publish —
+daily, with **no redeploy**. (Decision: token HTTPS ingest, 2026.)
 
-**One-time, on the Repl:** enable SSH in the Repl's SSH pane and add your public key; note the ssh
-target (`user@host`).
+**Runtime:** `pnpm start` runs `scripts/serve.mjs` — a Node front-controller that runs the proven SSR
+app (vite preview / workerd-miniflare) on an internal port and exposes `POST /__ingest`. Ingest streams
+the gzipped SQLite to the persistent disk, **validates it is a real, non-empty corpus** (≥1 contract and
+≥1 authority — never serve fabricated/empty data), atomically swaps it into the miniflare D1 path, and
+restarts the SSR child to reopen it.
 
-**One-time backfill (local):**
+**One-time, on the Repl:** set `DATA_PUSH_TOKEN` as a deployment **Secret** (`openssl rand -hex 32`).
+Put the same value plus `SIGMA_PUBLISH_URL=https://<your-site>` in your **local** `.env.local`.
+
+**One-time backfill, then first publish (local):**
 
 ```bash
 # needs the sqlite3 CLI + the data/eop buckets (see docs/etl.md)
-pnpm bootstrap          # or: pnpm run import   — full backfill into apps/web/.wrangler/state
-REPLIT_SSH=user@host REPLIT_DIR=~/sigma pnpm run replit:push    # rsync the ~1.7 GB D1 up once
+pnpm bootstrap                 # full backfill into apps/web/.wrangler/state
+pnpm run replit:publish        # gzip + POST the ~1.7 GB corpus to /__ingest; site hot-swaps it
 ```
 
-**Recurring refresh (local), keeps the online copy fresh:**
+**Recurring daily refresh (local) — cron this:**
 
 ```bash
-REPLIT_SSH=user@host pnpm run replit:refresh    # = import --catchup  +  rsync the changed pages
+pnpm run replit:refresh        # = import --catchup  +  replit:publish
 ```
 
-`scripts/replit-push.mjs` checkpoints the WAL, then rsyncs
-`apps/web/.wrangler/state/v3/d1/miniflare-D1DatabaseObject/` to the same path on the Repl (`--dry-run`
-to preview; `REPLIT_DIR` defaults to `~/sigma`; `SSH_OPTS` for a custom port/key). **After a push,
-restart the Repl** (its "Sigma Dev" workflow or the deployment) so the app reopens the swapped file.
-Run pushes when the local dev server/ETL is idle so the snapshot is consistent. Per the project rule:
-full backfill **once**, catch-up only after — never re-import the whole corpus.
+`scripts/replit-publish.mjs` reads `SIGMA_PUBLISH_URL` / `DATA_PUSH_TOKEN` from `.env.local`, locates the
+served D1, and streams it gzipped to the endpoint (no 1.7 GB buffered in memory). A publish briefly
+restarts the SSR child while the file swaps. Per the project rule: full backfill **once**, catch-up only
+after — never re-import the whole corpus.
 
 **Prerequisite:** the ETL shells out to the **`sqlite3` CLI** (work-DB transforms); install it locally
 (`apt install sqlite3` / nix `pkgs.sqlite`). The Repl already has it via `replit.nix`.
 
-**Caveat (size):** miniflare/workerd must open the 1.7 GB served file. The served DB was split out from
-the ~1.8 GB ETL staging precisely so workerd can open it. If it balks on the Repl, the fallback is the
-`better-sqlite3` adapter (`@sigma/db/sqlite`, `createSqliteD1`) — **already built and proven**: the real
-query layer (`getHomeData` + `getEntityNetwork`) runs on Node against the full 1.7 GB corpus
-(`src/sqlite-d1.corpus.test.ts`, gated on `SIGMA_SMOKE_DB`). Only the Node HTTP server entry (port
-checklist step 1) remains to switch the whole app onto it.
+**Size — confirmed OK:** the production build (workerd via vite preview) opens and serves the full 1.7 GB
+corpus (verified locally through the front-controller). If a future, larger corpus ever exceeds what
+workerd will open, the fallback is the `better-sqlite3` adapter (`@sigma/db/sqlite`, `createSqliteD1`) —
+built and proven against the 1.7 GB corpus (`src/sqlite-d1.corpus.test.ts`, gated on `SIGMA_SMOKE_DB`).
 
 ## Runtime reality: this targets Cloudflare Workers today
 

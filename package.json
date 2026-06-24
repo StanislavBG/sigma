@@ -14,13 +14,13 @@
     "test": "turbo run test",
     "lint": "prettier --check .",
     "format": "prettier --write .",
-    "start": "pnpm --filter @sigma/web start",
+    "start": "node scripts/serve.mjs",
     "setup": "node scripts/setup.mjs",
     "import": "node scripts/import.mjs",
     "bootstrap": "node scripts/bootstrap.mjs",
     "bootstrap:apply": "node scripts/bootstrap.mjs --apply",
-    "replit:push": "node scripts/replit-push.mjs",
-    "replit:refresh": "node scripts/import.mjs --catchup && node scripts/replit-push.mjs",
+    "replit:publish": "node scripts/replit-publish.mjs",
+    "replit:refresh": "node scripts/import.mjs --catchup && node scripts/replit-publish.mjs",
     "deploy": "turbo run deploy",
     "teardown": "node scripts/teardown.mjs"
   },
@@ -40,5 +40,8 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.7",
     "wrangler": "^4.93.1"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1"
   }
 }

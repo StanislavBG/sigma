@@ -30,12 +30,12 @@ VITE_TRUST_PROXY = "1"
 # Switch to "autoscale" only if you migrate the data to Postgres (see replit.md).
 deploymentTarget = "vm"
 # No `corepack enable` — it tries to symlink pnpm into the read-only Nix store and fails with EACCES.
-# pnpm is already on PATH in the Replit build/runtime, so call it directly.
-build = ["sh", "-c", "export VITE_TRUST_PROXY=1; pnpm install --frozen-lockfile && pnpm build"]
-# `pnpm start` serves the production build via Vite preview (workerd/miniflare), binding
-# 0.0.0.0:$PORT. This is the interim runtime until the dedicated Node server entry from the
-# port checklist lands (replit.md → "Replit port checklist"); it reads the miniflare D1 under
-# apps/web/.wrangler/state, so seed/restore data there before deploying.
+# pnpm is already on PATH. After the build, apply the D1 SCHEMA migrations (no seed — real data only)
+# so the app serves honest empty pages (real query, zero rows) until the first corpus is published.
+build = ["sh", "-c", "export VITE_TRUST_PROXY=1; pnpm install --frozen-lockfile && pnpm build && (cd apps/web && wrangler d1 migrations apply sigma --local || true)"]
+# `pnpm start` runs scripts/serve.mjs: the SSR app on an internal port + a token-protected POST /__ingest
+# so this operator's machine can publish a fresh corpus daily (no redeploy). Set DATA_PUSH_TOKEN as a
+# Replit *Secret* (Deployments → Secrets) to enable publishing; without it, ingest returns 503.
 run = ["sh", "-c", "pnpm start"]
 
 [[ports]]
