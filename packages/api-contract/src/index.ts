@@ -410,14 +410,19 @@ export interface NetworkCenterOption {
   value: string; // ?center= token, e.g. 'a:000695089' | 'c:131468980'
 }
 
+export interface NetworkCenter {
+  id: string;
+  kind: 'authority' | 'company';
+  label: string;
+  slug: string;
+  valueEur: number;
+}
+
 export interface NetworkData {
-  center: {
-    id: string;
-    kind: 'authority' | 'company';
-    label: string;
-    slug: string;
-    valueEur: number;
-  } | null;
+  // The focus entities — the graph is the merged ego network of all of them (1..N, capped in the
+  // query). `center` is the primary (centers[0]) kept for callers that only need a single label.
+  center: NetworkCenter | null;
+  centers: NetworkCenter[];
   nodes: NetworkNode[];
   edges: NetworkEdge[];
   centerOptions: { authorities: NetworkCenterOption[]; companies: NetworkCenterOption[] };

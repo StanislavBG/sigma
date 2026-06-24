@@ -79,10 +79,9 @@ function fakeDb(): D1Database {
 
 describe('getEntityNetwork', () => {
   it('builds the centre, hop-1 neighbours and a deduped hop-2 ring', async () => {
-    const { center, nodes, edges } = await getEntityNetwork(fakeDb(), {
-      kind: 'authority',
-      id: 'auth:C',
-    });
+    const { center, nodes, edges } = await getEntityNetwork(fakeDb(), [
+      { kind: 'authority', id: 'auth:C' },
+    ]);
     expect(center).toMatchObject({ id: 'auth:C', kind: 'authority', label: 'Център Институция' });
     // auth:C (centre) + eik:A, eik:B (hop 1) + auth:X (hop 2, shared by both -> one node)
     expect(nodes.map((n) => n.id).sort()).toEqual(['auth:C', 'auth:X', 'eik:A', 'eik:B']);
@@ -90,22 +89,43 @@ describe('getEntityNetwork', () => {
   });
 
   it('alternates kinds by hop (authority centre -> company hop1 -> authority hop2)', async () => {
-    const { nodes } = await getEntityNetwork(fakeDb(), { kind: 'authority', id: 'auth:C' });
+    const { nodes } = await getEntityNetwork(fakeDb(), [{ kind: 'authority', id: 'auth:C' }]);
     const byId = new Map(nodes.map((n) => [n.id, n]));
     expect(byId.get('eik:A')).toMatchObject({ kind: 'company', hop: 1 });
     expect(byId.get('auth:X')).toMatchObject({ kind: 'authority', hop: 2 });
   });
 
   it('weights each node by the sum of its incident edges', async () => {
-    const { nodes } = await getEntityNetwork(fakeDb(), { kind: 'authority', id: 'auth:C' });
+    const { nodes } = await getEntityNetwork(fakeDb(), [{ kind: 'authority', id: 'auth:C' }]);
     const byId = new Map(nodes.map((n) => [n.id, n]));
     expect(byId.get('auth:C')!.valueEur).toBe(8000); // 5000 + 3000
     expect(byId.get('auth:X')!.valueEur).toBe(3500); // 2000 + 1500
   });
 
   it('offers centre options for the picker', async () => {
-    const { centerOptions } = await getEntityNetwork(fakeDb(), { kind: 'authority', id: 'auth:C' });
+    const { centerOptions } = await getEntityNetwork(fakeDb(), [
+      { kind: 'authority', id: 'auth:C' },
+    ]);
     expect(centerOptions.authorities.length).toBeGreaterThan(0);
     expect(centerOptions.authorities[0]).toMatchObject({ kind: 'authority', value: 'a:C' });
+  });
+
+  it('exposes the focus list, with center as the primary focus', async () => {
+    const { center, centers } = await getEntityNetwork(fakeDb(), [
+      { kind: 'authority', id: 'auth:C' },
+    ]);
+    expect(centers).toHaveLength(1);
+    expect(center).toEqual(centers[0]);
+  });
+
+  it('dedupes a repeated focus into a single centre (merge is idempotent)', async () => {
+    const one = await getEntityNetwork(fakeDb(), [{ kind: 'authority', id: 'auth:C' }]);
+    const twice = await getEntityNetwork(fakeDb(), [
+      { kind: 'authority', id: 'auth:C' },
+      { kind: 'authority', id: 'auth:C' },
+    ]);
+    expect(twice.centers).toHaveLength(1);
+    expect(twice.nodes.map((n) => n.id).sort()).toEqual(one.nodes.map((n) => n.id).sort());
+    expect(twice.edges).toHaveLength(one.edges.length);
   });
 });

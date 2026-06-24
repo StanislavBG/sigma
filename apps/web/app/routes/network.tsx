@@ -1,11 +1,13 @@
-import { Form, Link, useNavigation, useSubmit } from 'react-router';
+import { Link, useNavigate, useNavigation } from 'react-router';
 import { count, money } from '@sigma/shared';
 import {
   authorityIdFromSlug,
   bidderIdFromSlug,
   getEntityNetwork,
+  MAX_CENTERS,
   type NetworkParams,
 } from '@sigma/db';
+import type { NetworkCenter } from '@sigma/api-contract';
 import type { Route } from './+types/network';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
@@ -29,9 +31,8 @@ export function headers() {
   return { 'Cache-Control': publicCache(1800) };
 }
 
-// ?center=a:<eik> | c:<slug>; null falls back to the biggest authority in the query layer.
-function parseCenter(token: string | null): NetworkParams | null {
-  if (!token) return null;
+// One focus token: a:<authority-slug> | c:<company-slug>.
+function parseCenterToken(token: string): NetworkParams | null {
   const i = token.indexOf(':');
   if (i < 1) return null;
   const kind = token.slice(0, i);
@@ -44,15 +45,41 @@ function parseCenter(token: string | null): NetworkParams | null {
   return null;
 }
 
+// ?center accepts a comma-separated focus list (a:… , c:…). Empty/malformed → biggest authority.
+function parseCenters(raw: string | null): NetworkParams[] {
+  if (!raw) return [];
+  const out: NetworkParams[] = [];
+  const seen = new Set<string>();
+  for (const tok of raw.split(',')) {
+    const p = parseCenterToken(tok.trim());
+    if (!p) continue;
+    const k = `${p.kind}:${p.id}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  return out.slice(0, MAX_CENTERS);
+}
+
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const center = parseCenter(new URL(request.url).searchParams.get('center'));
-  const data = await getEntityNetwork(context.cloudflare.env.DB, center);
+  const params = parseCenters(new URL(request.url).searchParams.get('center'));
+  const data = await getEntityNetwork(context.cloudflare.env.DB, params.length ? params : null);
   // A well-formed but non-existent ?center should 404 like the other entity pages, not render an
   // empty 200 that then gets edge-cached. A missing or malformed ?center keeps the default centre.
-  if (center && !data.center) {
+  if (params.length && !data.center) {
     throw new Response('Not Found', { status: 404 });
   }
   return { data };
+}
+
+// The ?center token for a focus entity — the same grammar the loader parses and node clicks build.
+export function centerToken(c: Pick<NetworkCenter, 'kind' | 'slug'>): string {
+  return `${c.kind === 'authority' ? 'a' : 'c'}:${c.slug}`;
+}
+
+// Build the /network href for a focus-token list (empty → default view).
+export function centersHref(tokens: string[]): string {
+  return tokens.length ? `/network?center=${tokens.join(',')}` : '/network';
 }
 
 interface LinkRow {
@@ -64,11 +91,23 @@ interface LinkRow {
 
 export default function Network({ loaderData }: Route.ComponentProps) {
   const { data } = loaderData;
-  const submit = useSubmit();
+  const navigate = useNavigate();
   const navigating = useNavigation().state !== 'idle';
-  const centerValue = data.center
-    ? `${data.center.kind === 'authority' ? 'a' : 'c'}:${data.center.slug}`
-    : '';
+  // Current focus list as ?center tokens; node clicks, chips and the picker add to / remove from it.
+  const tokens = data.centers.map(centerToken);
+  const atCapacity = tokens.length >= MAX_CENTERS;
+  // Append a focus (dropping the oldest once at the cap, so the picker always adds something).
+  const addFocus = (value: string) => {
+    if (!value || tokens.includes(value)) return;
+    navigate(centersHref([...tokens, value].slice(-MAX_CENTERS)));
+  };
+  const focusLabel =
+    data.centers.length <= 1
+      ? (data.center?.label ?? '')
+      : `${data.centers
+          .slice(0, -1)
+          .map((c) => c.label)
+          .join(', ')} и ${data.centers[data.centers.length - 1].label}`;
 
   const nodeById = new Map(data.nodes.map((n) => [n.id, n] as const));
   // Normalise each row to the real procurement direction (authority -> company), regardless of how the
@@ -109,33 +148,62 @@ export default function Network({ loaderData }: Route.ComponentProps) {
           lede="Връзките около една институция или фирма: преките ѝ контрагенти и техните следващи връзки. Откроява клъстери, които общата схема на потоците не показва. Това е фокусирана околност, не целият граф."
         />
 
-        <Form
-          method="get"
-          className="flow-controls"
-          role="group"
-          aria-label="Избор на център"
-          onChange={(e) => submit(e.currentTarget)}
-        >
+        <div className="flow-controls" role="group" aria-label="Фокус на графа">
           <label>
-            Център:
-            <select name="center" defaultValue={centerValue}>
+            Добави фокус:
+            <select
+              value=""
+              onChange={(e) => addFocus(e.currentTarget.value)}
+              disabled={navigating}
+            >
+              <option value="" disabled>
+                Избери институция или фирма…
+              </option>
               <optgroup label="Институции">
                 {data.centerOptions.authorities.map((o) => (
-                  <option key={o.value} value={o.value}>
+                  <option key={o.value} value={o.value} disabled={tokens.includes(o.value)}>
                     {o.label}
                   </option>
                 ))}
               </optgroup>
               <optgroup label="Компании">
                 {data.centerOptions.companies.map((o) => (
-                  <option key={o.value} value={o.value}>
+                  <option key={o.value} value={o.value} disabled={tokens.includes(o.value)}>
                     {o.label}
                   </option>
                 ))}
               </optgroup>
             </select>
           </label>
-        </Form>
+
+          {data.centers.length > 0 && (
+            <ul className="focus-chips" aria-label="Текущ фокус">
+              {data.centers.map((c) => {
+                const tok = centerToken(c);
+                const rest = tokens.filter((t) => t !== tok);
+                return (
+                  <li key={tok}>
+                    <span className={`chip-dot ${c.kind}`} aria-hidden="true" />
+                    {c.label}
+                    <Link
+                      className="chip-remove"
+                      to={centersHref(rest)}
+                      aria-label={`Премахни фокус ${c.label}`}
+                    >
+                      ×
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <p className="focus-hint">
+            {atCapacity
+              ? `Максимум ${MAX_CENTERS} фокуса — нов клик измества най-стария.`
+              : `Клик върху възел в графа добавя фокус (до ${MAX_CENTERS}).`}
+          </p>
+        </div>
 
         <p className="sr-only" role="status">
           {navigating ? 'Обновяване на визуализацията…' : 'Визуализацията е обновена.'}
@@ -147,12 +215,12 @@ export default function Network({ loaderData }: Route.ComponentProps) {
               id="graph"
               title={
                 <>
-                  Връзки около <em>{data.center.label}</em>
+                  Връзки около <em>{focusLabel}</em>
                 </>
               }
-              hint="Цветовете различават център, институции и фирми. Дебелината на връзката е стойността. Клик върху възел центрира графа върху него."
+              hint="Цветовете различават фокус, институции и фирми. Дебелината на връзката е стойността. Клик върху възел го добавя/маха като фокус (до 3)."
             >
-              <NetworkGraph data={data} />
+              <NetworkGraph data={data} centerTokens={tokens} maxCenters={MAX_CENTERS} />
             </Section>
 
             <Section id="links" title="Връзки в графа">

@@ -127,42 +127,34 @@ async function loadCenter(
   };
 }
 
-export async function getEntityNetwork(
+// Up to this many focus entities can be on the graph at once. The page accumulates clicks into the
+// `?center=` list; beyond this the oldest focus is dropped (see routes/network.tsx). Kept small so the
+// merged ego network stays legible — more is allowed but readability degrades.
+export const MAX_CENTERS = 3;
+
+// The ego network of ONE centre: centre (hop 0) + its top direct counterparties (hop 1) + each of
+// those neighbours' single top other counterparty (hop 2). Returned without node weights — the caller
+// merges several egos and computes incident-edge weights over the union.
+async function loadEgo(
   db: D1Database,
-  p: NetworkParams | null,
-): Promise<NetworkData> {
-  if (!p) {
-    // Default centre: the biggest authority by spend, so the page shows something on first load.
-    const top = await db
-      .prepare(
-        `SELECT authority_id FROM authority_totals
-         WHERE EXISTS (SELECT 1 FROM flow_pairs f WHERE f.authority_id = authority_totals.authority_id)
-         ORDER BY spent_eur DESC, authority_id LIMIT 1`,
-      )
-      .first<{ authority_id: string }>();
-    if (!top) {
-      return { center: null, nodes: [], edges: [], centerOptions: await loadCenterOptions(db) };
-    }
-    p = { kind: 'authority', id: top.authority_id };
-  }
+  p: NetworkParams,
+): Promise<{ center: Center; nodes: NetworkNode[]; edges: NetworkEdge[] } | null> {
   const isAuth = p.kind === 'authority';
   const centerCol = isAuth ? 'authority_id' : 'bidder_id';
   const neighborCol = isAuth ? 'bidder_id' : 'authority_id';
 
-  const [centerOptions, hop1res] = await Promise.all([
-    loadCenterOptions(db),
-    db
+  const hop1 = (
+    await db
       .prepare(
         `SELECT authority_id, bidder_id, authority_name, bidder_name, bidder_kind, won_eur, contracts
          FROM flow_pairs WHERE ${centerCol} = ? ORDER BY won_eur DESC LIMIT ?`,
       )
       .bind(p.id, HOP1)
-      .all<PairRow>(),
-  ]);
-  const hop1 = hop1res.results;
+      .all<PairRow>()
+  ).results;
 
   const center = await loadCenter(db, p, hop1[0]);
-  if (!center) return { center: null, nodes: [], edges: [], centerOptions };
+  if (!center) return null;
 
   const nodes = new Map<string, NetworkNode>([[center.id, { ...center, hop: 0 }]]);
   const edges: NetworkEdge[] = [];
@@ -197,11 +189,73 @@ export async function getEntityNetwork(
       seenNeighbor.add(neighborId);
       const node = isAuth ? authorityNodeOf(r, 2) : companyNodeOf(r, 2);
       if (node.id === center.id) continue;
-      // hop 1 and hop 2 are always opposite kinds, so a hop-2 row never lands on a hop-1 node. When two
-      // neighbours share the same hop-2 counterparty the node is kept once and both edges are added on
-      // purpose: that shared link is exactly the cluster the graph is meant to surface.
       if (!nodes.has(node.id)) nodes.set(node.id, { ...node, hop: 2 });
       edges.push({ from: neighborId, to: node.id, valueEur: r.won_eur, contracts: r.contracts });
+    }
+  }
+
+  return { center, nodes: [...nodes.values()], edges };
+}
+
+export async function getEntityNetwork(
+  db: D1Database,
+  params: NetworkParams[] | null,
+): Promise<NetworkData> {
+  const centerOptions = await loadCenterOptions(db);
+  const empty = { center: null, centers: [], nodes: [], edges: [], centerOptions } as NetworkData;
+
+  const seen = new Set<string>();
+  const deduped = (params ?? []).filter((p) => {
+    const k = `${p.kind}:${p.id}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  let list = deduped.length ? deduped.slice(0, MAX_CENTERS) : null;
+  if (!list) {
+    // Default centre: the biggest authority by spend, so the page shows something on first load.
+    const top = await db
+      .prepare(
+        `SELECT authority_id FROM authority_totals
+         WHERE EXISTS (SELECT 1 FROM flow_pairs f WHERE f.authority_id = authority_totals.authority_id)
+         ORDER BY spent_eur DESC, authority_id LIMIT 1`,
+      )
+      .first<{ authority_id: string }>();
+    if (!top) return empty;
+    list = [{ kind: 'authority', id: top.authority_id }];
+  }
+
+  const egos = (await Promise.all(list.map((p) => loadEgo(db, p)))).filter(
+    (e): e is NonNullable<typeof e> => e != null,
+  );
+  if (!egos.length) return empty;
+
+  const centers = egos.map((e) => e.center);
+  const centerIds = new Set(centers.map((c) => c.id));
+
+  // Merge the egos. Centres are authoritative (hop 0) even where they also appear as another centre's
+  // neighbour; every other node keeps its smallest hop across the egos it appears in.
+  const nodes = new Map<string, NetworkNode>();
+  for (const c of centers) nodes.set(c.id, { ...c, hop: 0 });
+  for (const ego of egos) {
+    for (const nd of ego.nodes) {
+      if (centerIds.has(nd.id)) continue;
+      const existing = nodes.get(nd.id);
+      if (!existing) nodes.set(nd.id, nd);
+      else if (nd.hop < existing.hop) nodes.set(nd.id, { ...existing, hop: nd.hop });
+    }
+  }
+
+  // Edges deduped by unordered endpoint pair — a shared counterparty between two foci yields the same
+  // authority↔company pair from both egos; the flow_pairs value is identical, so keep one.
+  const edges: NetworkEdge[] = [];
+  const seenEdge = new Set<string>();
+  for (const ego of egos) {
+    for (const e of ego.edges) {
+      const key = e.from < e.to ? `${e.from}|${e.to}` : `${e.to}|${e.from}`;
+      if (seenEdge.has(key)) continue;
+      seenEdge.add(key);
+      edges.push(e);
     }
   }
 
@@ -216,5 +270,5 @@ export async function getEntityNetwork(
     valueEur: weight.get(nd.id) ?? nd.valueEur,
   }));
 
-  return { center, nodes: nodeList, edges, centerOptions };
+  return { center: centers[0] ?? null, centers, nodes: nodeList, edges, centerOptions };
 }
