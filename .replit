@@ -26,7 +26,9 @@ SIGMA_DB_PATH = "/home/runner/${REPL_SLUG}/data-runtime/sigma.sqlite"
 # SQLite corpus needs — Autoscale instances are stateless/ephemeral and would lose it.
 # Switch to "autoscale" only if you migrate the data to Postgres (see replit.md).
 deploymentTarget = "vm"
-build = ["sh", "-c", "corepack enable && pnpm install --frozen-lockfile && pnpm build"]
+# No `corepack enable` — it tries to symlink pnpm into the read-only Nix store and fails with EACCES.
+# pnpm is already on PATH in the Replit build/runtime, so call it directly.
+build = ["sh", "-c", "pnpm install --frozen-lockfile && pnpm build"]
 # `pnpm start` serves the production build via Vite preview (workerd/miniflare), binding
 # 0.0.0.0:$PORT. This is the interim runtime until the dedicated Node server entry from the
 # port checklist lands (replit.md → "Replit port checklist"); it reads the miniflare D1 under
