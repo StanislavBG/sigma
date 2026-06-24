@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./sqlite": "./src/sqlite-d1.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -13,6 +14,10 @@
   "dependencies": {
     "@sigma/api-contract": "workspace:*",
     "@sigma/config": "workspace:*",
-    "@sigma/shared": "workspace:*"
+    "@sigma/shared": "workspace:*",
+    "better-sqlite3": "^12.11.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13"
   }
 }

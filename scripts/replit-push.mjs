@@ -18,11 +18,29 @@
 //   --no-checkpoint  skip the WAL checkpoint (use if sqlite3 is unavailable / DB is busy).
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Load REPLIT_SSH / REPLIT_DIR / SSH_OPTS from a gitignored .env.local (project convention) or .env at
+// the repo root so they need not be retyped each push. Inline env wins; .env.local wins over .env.
+for (const name of ['.env.local', '.env']) {
+  const file = resolve(root, name);
+  if (!existsSync(file)) continue;
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    if (line.trimStart().startsWith('#')) continue;
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/i);
+    if (!m) continue;
+    let val = m[2];
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (process.env[m[1]] === undefined) process.env[m[1]] = val;
+  }
+}
+
 const dryRun = process.argv.includes('--dry-run');
 const doCheckpoint = !process.argv.includes('--no-checkpoint');
 

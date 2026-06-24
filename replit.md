@@ -80,8 +80,11 @@ full backfill **once**, catch-up only after — never re-import the whole corpus
 (`apt install sqlite3` / nix `pkgs.sqlite`). The Repl already has it via `replit.nix`.
 
 **Caveat (size):** miniflare/workerd must open the 1.7 GB served file. The served DB was split out from
-the ~1.8 GB ETL staging precisely so workerd can open it, but if it balks on the Repl, the fallback is
-the Node-server + `better-sqlite3` adapter below (no size limit).
+the ~1.8 GB ETL staging precisely so workerd can open it. If it balks on the Repl, the fallback is the
+`better-sqlite3` adapter (`@sigma/db/sqlite`, `createSqliteD1`) — **already built and proven**: the real
+query layer (`getHomeData` + `getEntityNetwork`) runs on Node against the full 1.7 GB corpus
+(`src/sqlite-d1.corpus.test.ts`, gated on `SIGMA_SMOKE_DB`). Only the Node HTTP server entry (port
+checklist step 1) remains to switch the whole app onto it.
 
 ## Runtime reality: this targets Cloudflare Workers today
 
@@ -107,10 +110,12 @@ To run as a deployable Replit **Node** full-stack app (not just the miniflare de
    `createRequestHandler` (`@react-router/node`) and builds the `AppLoadContext`. Wire it to a
    `pnpm start` script (referenced by `.replit` `[deployment].run`). React Router v7 supports a Node
    adapter; this replaces `apps/web/workers/app.ts` for the Node target.
-2. **D1 → SQLite adapter** — implement a thin object that satisfies the `D1Database` interface
-   (`prepare/bind/all/first/run/batch`) backed by `better-sqlite3` (or `@libsql/client`) opening
-   `SIGMA_DB_PATH`. Inject it as `context.cloudflare.env.DB`. **This keeps every `@sigma/db` query
-   unchanged** — the highest-leverage step.
+2. **D1 → SQLite adapter** — ✅ **DONE**: `@sigma/db/sqlite` exports `createSqliteD1(path)`, a
+   read-only `D1Database` adapter over `better-sqlite3` (only the surface the query layer uses:
+   `prepare/bind/all/first`; FTS5 included). Unit-tested + proven on the full 1.7 GB corpus. The Node
+   server (step 1) injects it as `context.cloudflare.env.DB` reading `SIGMA_DB_PATH` — **every
+   `@sigma/db` query runs unchanged**. It is a separate export so better-sqlite3 never enters the
+   Workers bundle.
 3. **Drop/replace the edge primitives** — `caches.default` → standard HTTP `Cache-Control` (Replit/CDN
    handles caching) or a small in-memory LRU; R2 `CSV_CACHE` → local disk or regenerate on demand;
    rate-limit bindings → optional Node middleware (or no-op behind Replit's networking).
