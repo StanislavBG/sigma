@@ -17,6 +17,7 @@ dist/
 build/
 .react-router/
 .turbo/
+.vite/
 coverage/
 
 # Cloudflare / wrangler
