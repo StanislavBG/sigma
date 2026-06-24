@@ -1,0 +1,36 @@
+# Replit configuration for Sigma. Full porting guide + data-seeding steps live in replit.md.
+# Read replit.md FIRST — this file only wires the runtime; replit.md explains the
+# Cloudflare-Workers → Node port and how the SQLite corpus reaches the Repl (it is NOT in git).
+
+entrypoint = "replit.md"
+hidden = ["node_modules", ".turbo", ".react-router", ".wrangler", "dist", "build"]
+modules = ["nodejs-22"]
+
+# Workspace run. `pnpm dev` currently boots the Cloudflare Workers dev server (Vite +
+# miniflare), which emulates D1/R2/caches locally and reads the SQLite seeded under
+# apps/web/.wrangler/state. On a fresh sync there is NO data — run `pnpm setup` once first
+# (small sample) or restore the full corpus per replit.md before `pnpm dev`.
+run = "pnpm dev"
+
+[nix]
+channel = "stable-24_05"
+
+[env]
+# Where the SQLite corpus lives on the Repl's persistent disk (never in git). The Node
+# server adapter (replit.md → "Replit port checklist") reads this path; for the current
+# miniflare dev path the data instead sits under apps/web/.wrangler/state.
+SIGMA_DB_PATH = "/home/runner/${REPL_SLUG}/data-runtime/sigma.sqlite"
+
+[deployment]
+# Reserved VM is the ONLY Replit deploy target with a persistent filesystem, which the
+# SQLite corpus needs — Autoscale instances are stateless/ephemeral and would lose it.
+# Switch to "autoscale" only if you migrate the data to Postgres (see replit.md).
+deploymentTarget = "vm"
+build = ["sh", "-c", "corepack enable && pnpm install --frozen-lockfile && pnpm build"]
+# `pnpm start` does not exist yet — it is the Node server entry added by the port
+# (replit.md → "Replit port checklist"). Until then, production deploy is not wired.
+run = ["sh", "-c", "pnpm start"]
+
+[[ports]]
+localPort = 5173
+externalPort = 80

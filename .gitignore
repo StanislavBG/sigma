@@ -1,5 +1,12 @@
-# Data
+# Data — the procurement corpus is hosted on Replit persistent storage / Postgres,
+# NEVER committed to git (the served SQLite is ~1.7 GB). See replit.md.
 data/
+data-runtime/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
 
 # Dependencies
 node_modules/
