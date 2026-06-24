@@ -19,6 +19,8 @@
     "import": "node scripts/import.mjs",
     "bootstrap": "node scripts/bootstrap.mjs",
     "bootstrap:apply": "node scripts/bootstrap.mjs --apply",
+    "replit:push": "node scripts/replit-push.mjs",
+    "replit:refresh": "node scripts/import.mjs --catchup && node scripts/replit-push.mjs",
     "deploy": "turbo run deploy",
     "teardown": "node scripts/teardown.mjs"
   },

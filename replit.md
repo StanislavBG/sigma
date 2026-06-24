@@ -3,7 +3,7 @@
 This file is the Replit-facing companion to [`AGENTS.md`](AGENTS.md) (the repo's source of truth
 for conventions) and the design docs in [`docs/`](docs/). It explains **how Sigma runs on Replit**,
 **where the data lives**, and **what still has to be ported**. Read `AGENTS.md` for branching/commit
-rules — they are unchanged here. Read `docs/architecture.md` and `docs/etl.md` for *why* the system
+rules — they are unchanged here. Read `docs/architecture.md` and `docs/etl.md` for _why_ the system
 is shaped the way it is.
 
 > **TL;DR** — Sigma is a React Router v7 SSR app over a ~1.7 GB SQLite corpus of Bulgarian public
@@ -26,7 +26,7 @@ authorities, bidders) + precomputed rollups + an FTS5 search index. It is **giti
 excludes `data/`, `*.sqlite`, `.wrangler/`) and must stay that way — a public repo must never carry it.
 
 **Specified environment: SQLite on the Repl's persistent disk** (`SIGMA_DB_PATH`, default
-`/home/runner/<repl>/data-runtime/sigma.sqlite`). Rationale: D1 *is* SQLite, and `packages/db`'s queries
+`/home/runner/<repl>/data-runtime/sigma.sqlite`). Rationale: D1 _is_ SQLite, and `packages/db`'s queries
 plus the FTS5 search index are SQLite-dialect — keeping SQLite means **zero query rewrites**. The
 alternative (migrate to Replit Postgres) is a large rewrite (every query + FTS5 → `tsvector`/`pg_trgm`)
 and is only worth it if you need Replit **Autoscale** (stateless) instead of a **Reserved VM**.
@@ -34,20 +34,54 @@ and is only worth it if you need Replit **Autoscale** (stateless) instead of a *
 Because SQLite needs a stable filesystem, **deploy as a Replit Reserved VM** (`deploymentTarget = "vm"`
 in `.replit`), which has a persistent disk. Autoscale would lose the file between instances.
 
-### Getting the data into a fresh Repl (it is not in git)
+> **Where the served corpus actually lives today.** The app runs on Replit through **miniflare**
+> (`pnpm dev`/`pnpm start`), whose D1 is a SQLite file under
+> `apps/web/.wrangler/state/v3/d1/miniflare-D1DatabaseObject/`. That is what gets served — so the data
+> pipeline below writes/ships there. `SIGMA_DB_PATH` is reserved for the _future_ Node-server adapter
+> (port checklist below); it is unused while miniflare is the runtime.
 
-Pick one:
+### Getting the data into a fresh Repl (it is not in git)
 
 1. **Sample data (fastest, works offline)** — `pnpm setup` applies the D1 migrations and loads
    `scripts/seed.sql` (a small sample) into `apps/web/.wrangler/state`. The app runs immediately with
    representative-but-partial data. Best for first boot / UI work.
-2. **Full corpus, transferred** — copy the prebuilt `sigma.sqlite` onto the Repl's persistent disk
-   (Replit file upload, Object Storage, or `scp`) at `SIGMA_DB_PATH`. Fastest path to the real corpus
-   without re-running ETL. ~1.7 GB — use Reserved VM storage.
-3. **Full corpus, rebuilt (reproducible)** — run the ETL backfill from source
-   (`pnpm run import`, pulling daily buckets from `storage.eop.bg`). Heaviest (staging work-DB is
-   ~1.8 GB; see `docs/etl.md`). Do the full backfill **once**; afterwards only catch-up refreshes run —
-   never re-import the whole corpus.
+2. **Full corpus** — built locally and pushed over SSH; see the runbook next.
+
+### Production runbook: local ETL → rsync → online (the chosen flow)
+
+The corpus is built and refreshed **on your local machine**, then pushed to the Repl over SSH. rsync
+sends only changed SQLite pages, so steady-state refreshes are cheap. (Decision: rsync-over-SSH, 2026.)
+
+**One-time, on the Repl:** enable SSH in the Repl's SSH pane and add your public key; note the ssh
+target (`user@host`).
+
+**One-time backfill (local):**
+
+```bash
+# needs the sqlite3 CLI + the data/eop buckets (see docs/etl.md)
+pnpm bootstrap          # or: pnpm run import   — full backfill into apps/web/.wrangler/state
+REPLIT_SSH=user@host REPLIT_DIR=~/sigma pnpm run replit:push    # rsync the ~1.7 GB D1 up once
+```
+
+**Recurring refresh (local), keeps the online copy fresh:**
+
+```bash
+REPLIT_SSH=user@host pnpm run replit:refresh    # = import --catchup  +  rsync the changed pages
+```
+
+`scripts/replit-push.mjs` checkpoints the WAL, then rsyncs
+`apps/web/.wrangler/state/v3/d1/miniflare-D1DatabaseObject/` to the same path on the Repl (`--dry-run`
+to preview; `REPLIT_DIR` defaults to `~/sigma`; `SSH_OPTS` for a custom port/key). **After a push,
+restart the Repl** (its "Sigma Dev" workflow or the deployment) so the app reopens the swapped file.
+Run pushes when the local dev server/ETL is idle so the snapshot is consistent. Per the project rule:
+full backfill **once**, catch-up only after — never re-import the whole corpus.
+
+**Prerequisite:** the ETL shells out to the **`sqlite3` CLI** (work-DB transforms); install it locally
+(`apt install sqlite3` / nix `pkgs.sqlite`). The Repl already has it via `replit.nix`.
+
+**Caveat (size):** miniflare/workerd must open the 1.7 GB served file. The served DB was split out from
+the ~1.8 GB ETL staging precisely so workerd can open it, but if it balks on the Repl, the fallback is
+the Node-server + `better-sqlite3` adapter below (no size limit).
 
 ## Runtime reality: this targets Cloudflare Workers today
 
@@ -90,15 +124,15 @@ and auto-refresh.
 
 ## Commands
 
-| Command | What it does |
-|---|---|
-| `pnpm install` | Install workspace deps (pnpm + turbo monorepo) |
-| `pnpm setup` | One-time: deps + D1 migrations + small sample data into local miniflare state |
-| `pnpm dev` | Run the app (Workers dev server via Vite/miniflare) on `:5173` + ETL worker |
-| `pnpm build` | Turbo build across the monorepo |
-| `pnpm test` | Vitest across packages |
-| `pnpm run import` | Full ETL backfill/catch-up from `storage.eop.bg` (see `docs/etl.md`) |
-| `pnpm start` | **Not yet present** — the Node server entry from the port checklist |
+| Command           | What it does                                                                  |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `pnpm install`    | Install workspace deps (pnpm + turbo monorepo)                                |
+| `pnpm setup`      | One-time: deps + D1 migrations + small sample data into local miniflare state |
+| `pnpm dev`        | Run the app (Workers dev server via Vite/miniflare) on `:5173` + ETL worker   |
+| `pnpm build`      | Turbo build across the monorepo                                               |
+| `pnpm test`       | Vitest across packages                                                        |
+| `pnpm run import` | Full ETL backfill/catch-up from `storage.eop.bg` (see `docs/etl.md`)          |
+| `pnpm start`      | **Not yet present** — the Node server entry from the port checklist           |
 
 ## Secrets / env
 
