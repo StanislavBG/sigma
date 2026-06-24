@@ -4,6 +4,25 @@ This file is the source of truth for repo conventions. Both Codex agents (which 
 
 For project background, architecture, and scope, read the design docs in [docs/](docs/). For day-to-day commands and the intended layout, see [README.md](README.md).
 
+## Sigma Core vs Sigma Plus (this fork)
+
+There are two deployments. Keep them straight:
+
+|         | **Sigma Core** (upstream)                          | **Sigma Plus** (this fork — what we work on)                                               |
+| ------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Git     | `github.com/midt-bg/sigma`                         | `github.com/StanislavBG/sigma`                                                             |
+| Site    | `https://sigma.midt.bg` (behind Cloudflare Access) | `https://sigma-plus.replit.app` (Replit)                                                   |
+| Hosting | Cloudflare Workers + D1                            | Replit (miniflare via `scripts/serve.mjs`) + on-disk SQLite                                |
+| Data    | Platform ETL into D1                               | **Same** ЦАИС ЕОП corpus, operator-published live from a local ETL (`pnpm replit:refresh`) |
+
+**Sigma Plus is an extension of Sigma Core, never a competing source of truth.** It uses the **same data
+and the same source** (ЦАИС ЕОП, `storage.eop.bg`) and must stay **consistent with Core** — same domain
+model, same numbers, no fabricated/sample data. When asked to "check for drift", verify Plus has not
+diverged from Core's data model/semantics and is purely additive (extra hosting + the live publish
+pipeline + analytical emphasis on **Network** and **Competition**). The public-facing summary of this
+relationship is `docs/sigma-plus-vs-core.html` and the on-site "Какво е различно?" overlay
+(`apps/web/app/components/WhatIsDifferent.tsx`) — keep those two in sync.
+
 ## Repository model
 
 Single repo, trunk-based:
@@ -30,7 +49,7 @@ No `develop`, no `staging`. Maintainers with write access work on short-lived fe
 ## Pull requests
 
 - Feature branch → PR into `main` on `midt-bg/sigma` → review → merge → delete the branch.
-- Push the branch *before* opening the PR. Keep each PR scoped to one logical change so it stays reviewable.
+- Push the branch _before_ opening the PR. Keep each PR scoped to one logical change so it stays reviewable.
 - Use the `gh` CLI for PR operations. Only push or open a PR when asked.
 
 ## Working directory and environment

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="bg">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Какво е различно — СИГМА Plus спрямо СИГМА Core</title>
+    <!-- Self-contained one-pager for presenting СИГМА Plus to interested parties. The on-site version
+         is the "Какво е различно?" overlay (apps/web/app/components/WhatIsDifferent.tsx); keep the two in
+         sync. СИГМА Plus is an EXTENSION of СИГМА Core — same data, same source, never in conflict. -->
+    <style>
+      :root {
+        --accent: #c4361b;
+        --ink: #1a1a1a;
+        --soft: #555;
+        --rule: #e4e4de;
+        --bg: #faf9f6;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+        line-height: 1.5;
+      }
+      .wrap {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 40px 22px 56px;
+      }
+      .kicker {
+        font: 600 12px ui-monospace, monospace;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 6px;
+      }
+      h1 {
+        font-size: clamp(1.7rem, 4vw, 2.4rem);
+        margin: 0 0 10px;
+      }
+      .lede {
+        color: var(--soft);
+        font-size: 1.05rem;
+        margin: 0 0 28px;
+        max-width: 70ch;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      @media (max-width: 640px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: #fff;
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        padding: 18px 20px;
+      }
+      .card.accent {
+        border-color: var(--accent);
+        background: #fdf3f1;
+      }
+      .card h2 {
+        font-size: 1.05rem;
+        margin: 0 0 10px;
+      }
+      .card ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+      .card li,
+      .card p {
+        margin: 6px 0;
+        font-size: 0.95rem;
+      }
+      code {
+        background: #f0efea;
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 0.85em;
+      }
+      .both {
+        margin: 26px 0 6px;
+        padding: 16px 20px;
+        background: #fff;
+        border: 1px solid var(--rule);
+        border-left: 4px solid var(--accent);
+        border-radius: 8px;
+      }
+      .both b {
+        color: var(--accent);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        font-size: 0.92rem;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--rule);
+        vertical-align: top;
+      }
+      th {
+        color: var(--soft);
+        font-weight: 600;
+      }
+      footer {
+        margin-top: 30px;
+        color: var(--soft);
+        font: 12px ui-monospace, monospace;
+      }
+      a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <p class="kicker">СИГМА Plus · разширение, не отделен източник</p>
+      <h1>Какво е различно</h1>
+      <p class="lede">
+        <strong>СИГМА Plus</strong> е независимо разширение на <strong>СИГМА Core</strong>
+        (<a href="https://sigma.midt.bg">sigma.midt.bg</a>). Ползва <strong>същите данни</strong> и
+        <strong>същия източник</strong> като основната платформа — никога не им противоречи. Различното
+        е как данните се поддържат и кои анализи са в акцент.
+      </p>
+
+      <div class="both">
+        <b>Общото (важното):</b> и двете стъпват върху отворените данни на ЦАИС ЕОП
+        (<code>storage.eop.bg</code>) — един и същ доменен модел, нормализация в евро и проверки за
+        качество на стойностите. СИГМА Plus е разширение, а не конкуриращ се източник на истина.
+      </div>
+
+      <div class="grid">
+        <section class="card">
+          <h2>Данни и източник</h2>
+          <ul>
+            <li>Единствен източник: <strong>ЦАИС ЕОП</strong> отворени данни — същата основа като Core.</li>
+            <li>~193 600 договора (2020–2026), ~4 870 възложители; стойности нормализирани в евро.</li>
+            <li>
+              Без измислени данни — показва се само реалното (празно е празно), не се добавят примерни
+              стойности.
+            </li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <h2>Как се поддържа (различното)</h2>
+          <ul>
+            <li><strong>Независим, оператор-публикуван</strong> набор: ETL върви локално и публикува към живия сайт.</li>
+            <li><strong>Инкрементално</strong>: на всеки 30 мин се зареждат само новите дни; публикува се само при реална промяна.</li>
+            <li>Отделен хостинг и отделен публикационен канал — разширение, не дубликат.</li>
+          </ul>
+        </section>
+
+        <section class="card accent">
+          <h2>★ Акцент: Мрежа на връзките</h2>
+          <p>
+            Его-граф около една институция или фирма — преките контрагенти и техните следващи връзки.
+            Откроява <strong>клъстери</strong> и споделени доставчици, които общата схема на потоците не
+            показва. Кликане върху възел пренастройва центъра; таблицата отдолу води към профилите.
+          </p>
+        </section>
+
+        <section class="card accent">
+          <h2>★ Акцент: Конкуренция</h2>
+          <p>
+            Колко конкурентни са поръчките: <strong>дял на договорите с една оферта</strong> и
+            <strong>концентрация на доставчиците (HHI)</strong> по възложител — бързи сигнали за ниска
+            конкуренция.
+          </p>
+        </section>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>&nbsp;</th>
+            <th>СИГМА Core — sigma.midt.bg</th>
+            <th>СИГМА Plus — sigma-plus.replit.app</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>Източник на данни</th>
+            <td>ЦАИС ЕОП (storage.eop.bg)</td>
+            <td>Същият — ЦАИС ЕОП (без разминаване)</td>
+          </tr>
+          <tr>
+            <th>Поддръжка</th>
+            <td>Платформен ETL</td>
+            <td>Локален ETL → публикуване на живо (на 30 мин, инкрементално)</td>
+          </tr>
+          <tr>
+            <th>Акцент</th>
+            <td>Пълен набор изгледи</td>
+            <td>Мрежа на връзките и Конкуренция</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <footer>
+        Останалите изгледи (Потоци, Тренд, Карта, Договори) повтарят основната платформа и са
+        по-второстепенни тук. Източник (CC-BY 4.0): АОП / ЦАИС ЕОП — отворени данни.
+      </footer>
+    </main>
+  </body>
+</html>
