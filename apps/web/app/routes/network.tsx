@@ -56,8 +56,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 interface LinkRow {
-  from: string;
-  to: string;
+  fromLabel: string;
+  fromHref: string;
+  toLabel: string;
+  toHref: string;
   valueEur: number;
   contracts: number;
 }
@@ -80,15 +82,26 @@ export default function Network({ loaderData }: Route.ComponentProps) {
     const authority = a?.kind === 'authority' ? a : b;
     const company = a?.kind === 'authority' ? b : a;
     return {
-      from: authority?.label ?? e.from,
-      to: company?.label ?? e.to,
+      fromLabel: authority?.label ?? e.from,
+      fromHref: authority ? `/authorities/${authority.slug}` : '',
+      toLabel: company?.label ?? e.to,
+      toHref: company ? `/companies/${company.slug}` : '',
       valueEur: e.valueEur,
       contracts: e.contracts,
     };
   });
   const columns: Column<LinkRow>[] = [
-    { key: 'from', header: 'От', isTitle: true, cell: (r) => r.from },
-    { key: 'to', header: 'Към', cell: (r) => r.to },
+    {
+      key: 'from',
+      header: 'От',
+      isTitle: true,
+      cell: (r) => (r.fromHref ? <Link to={r.fromHref}>{r.fromLabel}</Link> : r.fromLabel),
+    },
+    {
+      key: 'to',
+      header: 'Към',
+      cell: (r) => (r.toHref ? <Link to={r.toHref}>{r.toLabel}</Link> : r.toLabel),
+    },
     { key: 'value', header: 'Стойност', align: 'money', cell: (r) => money(r.valueEur) },
     {
       key: 'contracts',
@@ -159,7 +172,7 @@ export default function Network({ loaderData }: Route.ComponentProps) {
               <DataTable
                 columns={columns}
                 rows={rows}
-                getKey={(r) => `${r.from}-${r.to}`}
+                getKey={(r) => `${r.fromLabel}-${r.toLabel}`}
                 caption="Връзки в графа"
               />
             </Section>
