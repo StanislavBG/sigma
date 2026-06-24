@@ -9,7 +9,15 @@
 // SSR child so it reopens the new database. Everything else is reverse-proxied to the SSR child.
 import { spawn } from 'node:child_process';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { createWriteStream, existsSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+} from 'node:fs';
 import http from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -31,6 +39,26 @@ function mainDbPath() {
     ? readdirSync(D1_DIR).find((f) => f.endsWith('.sqlite') && f !== 'metadata.sqlite')
     : null;
   return join(D1_DIR, existing || FALLBACK_DB);
+}
+
+// Before the first data publish there is no corpus, so the SSR loaders would 500 (no tables) and the
+// deploy health check would never pass. Apply the SCHEMA only (no data — real data only) so the app
+// serves honest EMPTY pages until a real corpus is ingested. Idempotent: skipped once `contracts` exists.
+function ensureSchema() {
+  try {
+    mkdirSync(D1_DIR, { recursive: true });
+    const db = new Database(mainDbPath());
+    const has = db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contracts'")
+      .get();
+    if (!has) {
+      db.exec(readFileSync(join(root, 'packages/db/migrations/0000_init.sql'), 'utf8'));
+      console.log('[serve] applied empty schema — awaiting first data publish');
+    }
+    db.close();
+  } catch (err) {
+    console.error(`[serve] schema ensure failed (continuing): ${err.message}`);
+  }
 }
 
 // ── SSR child (vite preview, internal) ────────────────────────────────────────────────────────────
@@ -190,6 +218,7 @@ const server = http.createServer((req, res) => {
 server.requestTimeout = 0;
 server.headersTimeout = 0;
 
+ensureSchema();
 startChild();
 await waitReady();
 server.listen(PORT, '0.0.0.0', () => {
