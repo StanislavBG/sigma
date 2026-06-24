@@ -128,7 +128,13 @@ export function SiteHeader() {
               </button>
             </div>
             {NAV.map((item) => (
-              <NavLink key={item.to} to={item.to} end={item.end} onClick={() => setNavOpen(false)}>
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                prefetch="intent"
+                onClick={() => setNavOpen(false)}
+              >
                 {item.label}
               </NavLink>
             ))}
