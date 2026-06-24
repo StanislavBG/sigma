@@ -2359,8 +2359,7 @@ details.row .body .signal .why {
   stroke-linejoin: round;
   pointer-events: none;
 }
-/* Nodes are anchors → show the click affordance and an accent ring on hover/focus. The current
-   foci (a.is-focus) keep a permanent accent ring so they read as selected. */
+/* Non-centre nodes are anchors → show the click affordance and an accent ring on hover/focus. */
 .network-svg a {
   cursor: pointer;
 }
@@ -2369,64 +2368,8 @@ details.row .body .signal .why {
   stroke: var(--accent);
   stroke-width: 2.5;
 }
-.network-svg a.is-focus .node {
-  stroke: var(--accent);
-  stroke-width: 2.5;
-}
 .network-svg a:focus-visible {
   outline: none;
-}
-/* Focus chips: the current ?center list, each removable. */
-.focus-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.focus-chips li {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 6px 3px 8px;
-  border: 1px solid var(--rule, #ddd);
-  border-radius: 999px;
-  font: 12px var(--font-mono, monospace);
-  background: var(--surface, #fff);
-}
-.focus-chips .chip-dot {
-  width: 9px;
-  height: 9px;
-  background: var(--ink);
-}
-.focus-chips .chip-dot.authority {
-  border-radius: 50%;
-}
-.focus-chips .chip-dot.company {
-  border-radius: 2px;
-  background: var(--ink-mid);
-}
-.focus-chips .chip-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  text-decoration: none;
-  font-size: 14px;
-  line-height: 1;
-  color: var(--ink-soft, #555);
-}
-.focus-chips .chip-remove:hover {
-  background: var(--accent);
-  color: #fff;
-}
-.focus-hint {
-  margin: 6px 0 0;
-  font: 11px var(--font-mono, monospace);
-  color: var(--ink-soft, #666);
 }
 /* Edge-label toggle (pure CSS, no JS): unchecked hides every .edge-label. */
 .net-toggle {
