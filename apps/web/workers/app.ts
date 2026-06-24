@@ -86,8 +86,14 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
+// When deployed behind a TLS-terminating proxy (e.g. Replit), the edge already enforces HTTPS and
+// reaches the app over plain HTTP — including health checks with no `x-forwarded-proto`. Self-redirecting
+// would 301 every such request and fail the deploy health check, so VITE_TRUST_PROXY disables it. On
+// Cloudflare the flag is unset and requests already arrive as HTTPS, so the redirect stays a no-op.
+const TRUST_PROXY = import.meta.env.VITE_TRUST_PROXY === '1';
+
 async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const httpsRedirect = redirectCleartextHttp(request, import.meta.env.PROD);
+  const httpsRedirect = TRUST_PROXY ? null : redirectCleartextHttp(request, import.meta.env.PROD);
   if (httpsRedirect) return httpsRedirect;
 
   if (request.method === 'OPTIONS') return optionsResponse(import.meta.env.PROD);

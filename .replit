@@ -20,6 +20,9 @@ channel = "stable-24_05"
 # server adapter (replit.md → "Replit port checklist") reads this path; for the current
 # miniflare dev path the data instead sits under apps/web/.wrangler/state.
 SIGMA_DB_PATH = "/home/runner/${REPL_SLUG}/data-runtime/sigma.sqlite"
+# Behind Replit's TLS-terminating proxy the app must NOT self-redirect http→https (it would 301 the
+# health check and never go healthy). VITE_TRUST_PROXY is read at build time (apps/web/workers/app.ts).
+VITE_TRUST_PROXY = "1"
 
 [deployment]
 # Reserved VM is the ONLY Replit deploy target with a persistent filesystem, which the
@@ -28,7 +31,7 @@ SIGMA_DB_PATH = "/home/runner/${REPL_SLUG}/data-runtime/sigma.sqlite"
 deploymentTarget = "vm"
 # No `corepack enable` — it tries to symlink pnpm into the read-only Nix store and fails with EACCES.
 # pnpm is already on PATH in the Replit build/runtime, so call it directly.
-build = ["sh", "-c", "pnpm install --frozen-lockfile && pnpm build"]
+build = ["sh", "-c", "export VITE_TRUST_PROXY=1; pnpm install --frozen-lockfile && pnpm build"]
 # `pnpm start` serves the production build via Vite preview (workerd/miniflare), binding
 # 0.0.0.0:$PORT. This is the interim runtime until the dedicated Node server entry from the
 # port checklist lands (replit.md → "Replit port checklist"); it reads the miniflare D1 under
