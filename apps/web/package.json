@@ -7,6 +7,7 @@
     "dev": "react-router dev",
     "build": "react-router build",
     "preview": "react-router build && vite preview",
+    "start": "vite preview --host 0.0.0.0 --port ${PORT:-5173}",
     "deploy": "react-router build && node ../../scripts/wrangler-render.mjs build/server/wrangler.json && wrangler deploy --config build/server/wrangler.deploy.json",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "wrangler types && react-router typegen && tsc -b",

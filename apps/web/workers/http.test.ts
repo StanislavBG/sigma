@@ -13,6 +13,21 @@ describe('redirectCleartextHttp', () => {
   it('does not redirect HTTP in development', () => {
     expect(redirectCleartextHttp(new Request('http://local/'), false)).toBeNull();
   });
+
+  it('does not loop behind a TLS-terminating proxy that forwards https', () => {
+    // Replit reaches the Worker over plain http internally but the client is on https.
+    const req = new Request('http://local/companies', {
+      headers: { 'x-forwarded-proto': 'https' },
+    });
+    expect(redirectCleartextHttp(req, true)).toBeNull();
+  });
+
+  it('still redirects when the proxy forwards cleartext http', () => {
+    const req = new Request('http://local/companies', {
+      headers: { 'x-forwarded-proto': 'http' },
+    });
+    expect(redirectCleartextHttp(req, true)?.status).toBe(301);
+  });
 });
 
 describe('optionsResponse', () => {

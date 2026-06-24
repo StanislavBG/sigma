@@ -27,8 +27,10 @@ SIGMA_DB_PATH = "/home/runner/${REPL_SLUG}/data-runtime/sigma.sqlite"
 # Switch to "autoscale" only if you migrate the data to Postgres (see replit.md).
 deploymentTarget = "vm"
 build = ["sh", "-c", "corepack enable && pnpm install --frozen-lockfile && pnpm build"]
-# `pnpm start` does not exist yet — it is the Node server entry added by the port
-# (replit.md → "Replit port checklist"). Until then, production deploy is not wired.
+# `pnpm start` serves the production build via Vite preview (workerd/miniflare), binding
+# 0.0.0.0:$PORT. This is the interim runtime until the dedicated Node server entry from the
+# port checklist lands (replit.md → "Replit port checklist"); it reads the miniflare D1 under
+# apps/web/.wrangler/state, so seed/restore data there before deploying.
 run = ["sh", "-c", "pnpm start"]
 
 [[ports]]
