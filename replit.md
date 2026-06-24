@@ -70,11 +70,20 @@ pnpm bootstrap                 # full backfill into apps/web/.wrangler/state
 pnpm run replit:publish        # gzip + POST the ~1.7 GB corpus to /__ingest; site hot-swaps it
 ```
 
-**Recurring daily refresh (local) — cron this:**
+**Recurring refresh (local) — runs every 30 min via cron:**
 
 ```bash
-pnpm run replit:refresh        # = import --catchup  +  replit:publish
+pnpm run replit:refresh        # = import --catchup (incremental load)  +  replit:publish (delta-gated)
 ```
+
+`scripts/refresh-cron.sh` is the cron entrypoint (installed as `*/30 * * * * flock -n … refresh-cron.sh`;
+`flock` prevents overlapping runs). The loop is **delta-driven**: `import --catchup` only fetches new
+`storage.eop.bg` buckets, and `replit:publish` computes a corpus **watermark** (`contracts | authorities
+| Σ amount_eur`, stored in `.publish-watermark`) and **skips the upload entirely when nothing changed**,
+so most 30-min ticks are cheap no-ops (the upstream is daily-grained). `--force` publishes regardless.
+**Prerequisite:** `import --catchup` needs the `sqlite3` CLI — `sudo apt install -y sqlite3` (missing →
+the load step fails and the publish is skipped). The _transport_ is still a full-file upload when the
+watermark changes; true row-level delta transport is future work (ship the slice SQL, apply server-side).
 
 `scripts/replit-publish.mjs` reads `SIGMA_PUBLISH_URL` / `DATA_PUSH_TOKEN` from `.env.local`, locates the
 served D1, and uploads it in **small gzipped chunks** (`/__ingest/begin` → many `/chunk` → `/commit`) —

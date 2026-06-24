@@ -8,6 +8,9 @@ data-runtime/
 *.db-wal
 *.db-shm
 
+# Local publish watermark (last-published corpus signature) — machine-local state.
+.publish-watermark
+
 # Dependencies
 node_modules/
 .pnpm-store/

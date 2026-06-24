@@ -17,12 +17,14 @@ import {
   readdirSync,
   readFileSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import https from 'node:https';
 import http from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import Database from 'better-sqlite3';
 
 const CHUNK = 8 * 1024 * 1024; // 8 MiB raw per request — safely under the proxy body limit, gzipped
 
@@ -62,6 +64,43 @@ if (!main) {
 const dbPath = join(d1Dir, main);
 const size = statSync(dbPath).size;
 const lib = new URL(base).protocol === 'https:' ? https : http;
+
+// Watermark: a cheap signature of the corpus content. The 30-min cron re-runs catch-up + publish, but we
+// only upload when the corpus actually changed since the last successful publish (delta-driven). `--force`
+// publishes regardless.
+const wmFile = resolve(root, '.publish-watermark');
+function corpusSignature() {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const r = db
+      .prepare(
+        `SELECT (SELECT count(*) FROM contracts) AS c,
+                (SELECT count(*) FROM authorities) AS a,
+                (SELECT COALESCE(SUM(amount_eur), 0) FROM contracts) AS s`,
+      )
+      .get();
+    return `${r.c}|${r.a}|${Math.round(r.s)}`;
+  } finally {
+    db.close();
+  }
+}
+
+let signature;
+try {
+  signature = corpusSignature();
+} catch (err) {
+  console.error(
+    `ERROR: local corpus is not queryable (${err.message}). Run \`pnpm import\` first.`,
+  );
+  process.exit(1);
+}
+const lastSignature = existsSync(wmFile) ? readFileSync(wmFile, 'utf8').trim() : '';
+if (signature === lastSignature && !process.argv.includes('--force')) {
+  console.log(
+    `==> no change since last publish (${signature}); skipping. Use --force to override.`,
+  );
+  process.exit(0);
+}
 
 // POST one phase; gzip-compress the body if given. Resolves { status, body }.
 function post(path, body) {
@@ -114,4 +153,5 @@ process.stdout.write('\n==> committing…\n');
 
 const commit = await post('/__ingest/commit');
 console.log(`<- HTTP ${commit.status}: ${commit.body}`);
+if (commit.status === 200) writeFileSync(wmFile, signature);
 process.exit(commit.status === 200 ? 0 : 1);
