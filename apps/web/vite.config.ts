@@ -27,4 +27,11 @@ export default defineConfig({
     host: true,
     port: 5173,
   },
+  preview: {
+    // `pnpm start` serves the production build with `vite preview` behind Replit's TLS-terminating
+    // proxy, which forwards a dynamic host (e.g. sigma-plus.replit.app or a custom domain). Vite's
+    // preview host allowlist would otherwise block it ("This host is not allowed"). The app is public
+    // and read-only, so disabling the host check here is safe and avoids hardcoding the deploy domain.
+    allowedHosts: true,
+  },
 });
