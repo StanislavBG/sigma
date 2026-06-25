@@ -59,8 +59,16 @@ the gzipped SQLite to the persistent disk, **validates it is a real, non-empty c
 ≥1 authority — never serve fabricated/empty data), atomically swaps it into the miniflare D1 path, and
 restarts the SSR child to reopen it.
 
-**One-time, on the Repl:** set `DATA_PUSH_TOKEN` as a deployment **Secret** (`openssl rand -hex 32`).
-Put the same value plus `SIGMA_PUBLISH_URL=https://<your-site>` in your **local** `.env.local`.
+**Persistence across redeploys (Replit Object Storage).** A Replit **Deploy** rebuilds the app into a
+fresh filesystem, which wipes the on-disk D1 — so the corpus is kept in **Replit Object Storage** (object
+`sigma-corpus.sqlite`) and the on-disk D1 is just a cache. `serve.mjs` **restores from Object Storage on
+boot** when the local DB is empty, and **backs up to it on every publish**. So a redeploy self-heals — no
+manual re-publish, no empty-data gap. If Object Storage is unavailable, it degrades to the empty schema.
+
+**One-time, on the Repl:** (1) enable **Object Storage** (App Storage → Object Storage → create a bucket —
+the default bucket is auto-detected, no env needed). (2) set `DATA_PUSH_TOKEN` as a deployment **Secret**
+(`openssl rand -hex 32`). Put the same token plus `SIGMA_PUBLISH_URL=https://<your-site>` in your **local**
+`.env.local`. The first `replit:publish` populates Object Storage; thereafter redeploys restore from it.
 
 **One-time backfill, then first publish (local):**
 

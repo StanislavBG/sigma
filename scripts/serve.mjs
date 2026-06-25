@@ -42,13 +42,82 @@ function mainDbPath() {
   return join(D1_DIR, existing || FALLBACK_DB);
 }
 
-// Before the first data publish there is no corpus, so the SSR loaders would 500 (no tables) and the
-// deploy health check would never pass. Apply the SCHEMA only (no data — real data only) so the app
-// serves honest EMPTY pages until a real corpus is ingested. Idempotent: skipped once `contracts` exists.
-function ensureSchema() {
+// ── Persistence across redeploys ──────────────────────────────────────────────────────────────────
+// A Replit redeploy rebuilds the app into a FRESH filesystem, wiping the on-disk D1. So the corpus is
+// kept in Replit Object Storage (survives any redeploy/restart) and the on-disk D1 is just a cache:
+// restored on boot if the local DB is empty, re-uploaded on every publish. Falls back gracefully when
+// Object Storage is unavailable (e.g. local dev) — then we apply the empty schema and carry on.
+const OBJECT_NAME = 'sigma-corpus.sqlite';
+let objectClient; // undefined = not tried yet; null = unavailable
+
+async function objectStorage() {
+  if (objectClient !== undefined) return objectClient;
   try {
-    mkdirSync(D1_DIR, { recursive: true });
-    const db = new Database(mainDbPath());
+    const { Client } = await import('@replit/object-storage');
+    objectClient = new Client();
+  } catch (err) {
+    console.warn(`[serve] Object Storage unavailable (${err.message}); persistence disabled`);
+    objectClient = null;
+  }
+  return objectClient;
+}
+
+function hasData(path) {
+  try {
+    const db = new Database(path, { readonly: true, fileMustExist: true });
+    const n = db.prepare('SELECT count(*) AS c FROM contracts').get().c;
+    db.close();
+    return n > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function restoreFromObjectStorage(path) {
+  const client = await objectStorage();
+  if (!client) return false;
+  try {
+    const ex = await client.exists(OBJECT_NAME);
+    if (!(ex?.ok && ex.value)) return false;
+    console.log('[serve] restoring corpus from Object Storage…');
+    const res = await client.downloadToFilename(OBJECT_NAME, path);
+    if (!res?.ok) {
+      console.error(`[serve] restore failed: ${res?.error?.message ?? 'unknown'}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(`[serve] restore error: ${err.message}`);
+    return false;
+  }
+}
+
+async function backupToObjectStorage(path) {
+  const client = await objectStorage();
+  if (!client) return;
+  try {
+    console.log('[serve] backing up corpus to Object Storage…');
+    const res = await client.uploadFromFilename(OBJECT_NAME, path);
+    console.log(
+      res?.ok ? '[serve] backup ok' : `[serve] backup failed: ${res?.error?.message ?? 'unknown'}`,
+    );
+  } catch (err) {
+    console.error(`[serve] backup error: ${err.message}`);
+  }
+}
+
+// Boot: prefer real data already on disk; else restore from Object Storage; else apply the empty schema
+// (real data only — never fabricated) so the app serves honest empty pages until the first publish.
+async function ensureCorpus() {
+  mkdirSync(D1_DIR, { recursive: true });
+  const path = mainDbPath();
+  if (hasData(path)) return;
+  if ((await restoreFromObjectStorage(path)) && hasData(path)) {
+    console.log('[serve] corpus restored from Object Storage');
+    return;
+  }
+  try {
+    const db = new Database(path);
     const has = db
       .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contracts'")
       .get();
@@ -203,6 +272,8 @@ async function handleIngest(req, res, path) {
     restarting = false;
     startChild();
     const ready = await waitReady();
+    // Persist the new corpus so it survives the next redeploy (the live site is already serving it).
+    await backupToObjectStorage(dbPath);
 
     console.log(`[serve] published corpus: ${contracts} contracts, ${authorities} authorities`);
     return json(res, ready ? 200 : 502, { ok: ready, contracts, authorities });
@@ -244,7 +315,7 @@ const server = http.createServer((req, res) => {
 server.requestTimeout = 0;
 server.headersTimeout = 0;
 
-ensureSchema();
+await ensureCorpus();
 startChild();
 await waitReady();
 server.listen(PORT, '0.0.0.0', () => {
