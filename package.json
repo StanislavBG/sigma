@@ -20,6 +20,7 @@
     "bootstrap": "node scripts/bootstrap.mjs",
     "bootstrap:apply": "node scripts/bootstrap.mjs --apply",
     "replit:publish": "node scripts/replit-publish.mjs",
+    "replit:republish": "node scripts/replit-publish.mjs --force",
     "replit:refresh": "node scripts/import.mjs --catchup && node scripts/replit-publish.mjs",
     "deploy": "turbo run deploy",
     "teardown": "node scripts/teardown.mjs"
