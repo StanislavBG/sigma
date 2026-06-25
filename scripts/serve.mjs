@@ -73,25 +73,6 @@ function hasData(path) {
   }
 }
 
-async function restoreFromObjectStorage(path) {
-  const client = await objectStorage();
-  if (!client) return false;
-  try {
-    const ex = await client.exists(OBJECT_NAME);
-    if (!(ex?.ok && ex.value)) return false;
-    console.log('[serve] restoring corpus from Object Storage…');
-    const res = await client.downloadToFilename(OBJECT_NAME, path);
-    if (!res?.ok) {
-      console.error(`[serve] restore failed: ${res?.error?.message ?? 'unknown'}`);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.error(`[serve] restore error: ${err.message}`);
-    return false;
-  }
-}
-
 async function backupToObjectStorage(path) {
   const client = await objectStorage();
   if (!client) return;
@@ -106,28 +87,58 @@ async function backupToObjectStorage(path) {
   }
 }
 
-// Boot: prefer real data already on disk; else restore from Object Storage; else apply the empty schema
-// (real data only — never fabricated) so the app serves honest empty pages until the first publish.
-async function ensureCorpus() {
-  mkdirSync(D1_DIR, { recursive: true });
-  const path = mainDbPath();
-  if (hasData(path)) return;
-  if ((await restoreFromObjectStorage(path)) && hasData(path)) {
-    console.log('[serve] corpus restored from Object Storage');
-    return;
-  }
+// Apply the empty schema (real data only — never fabricated) so the app can serve honest empty pages
+// IMMEDIATELY and pass the deploy health check, even before any corpus is restored.
+function applySchemaIfEmpty(path) {
   try {
+    mkdirSync(D1_DIR, { recursive: true });
     const db = new Database(path);
     const has = db
       .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contracts'")
       .get();
     if (!has) {
       db.exec(readFileSync(join(root, 'packages/db/migrations/0000_init.sql'), 'utf8'));
-      console.log('[serve] applied empty schema — awaiting first data publish');
+      console.log('[serve] applied empty schema — awaiting corpus');
     }
     db.close();
   } catch (err) {
     console.error(`[serve] schema ensure failed (continuing): ${err.message}`);
+  }
+}
+
+// After the app is already serving (so the health check has passed), restore the corpus from Object
+// Storage in the background and hot-swap it in. No-op if the disk already has real data or the bucket is
+// empty — so a redeploy self-heals: serve empty, then the real data swaps in ~moments later.
+async function restoreInBackground() {
+  const path = mainDbPath();
+  if (hasData(path)) return;
+  const client = await objectStorage();
+  if (!client) return;
+  try {
+    const ex = await client.exists(OBJECT_NAME);
+    if (!(ex?.ok && ex.value)) {
+      console.log('[serve] no corpus in Object Storage yet — awaiting first publish');
+      return;
+    }
+    console.log('[serve] restoring corpus from Object Storage (background)…');
+    const tmp = `${path}.restore`;
+    const res = await client.downloadToFilename(OBJECT_NAME, tmp);
+    if (!res?.ok || !hasData(tmp)) {
+      rmSync(tmp, { force: true });
+      console.error('[serve] restore failed or invalid corpus');
+      return;
+    }
+    restarting = true;
+    await stopChild();
+    for (const suffix of ['', '-wal', '-shm', '-journal'])
+      rmSync(`${path}${suffix}`, { force: true });
+    renameSync(tmp, path);
+    restarting = false;
+    startChild();
+    await waitReady();
+    console.log('[serve] corpus restored from Object Storage');
+  } catch (err) {
+    console.error(`[serve] background restore error: ${err.message}`);
   }
 }
 
@@ -315,11 +326,13 @@ const server = http.createServer((req, res) => {
 server.requestTimeout = 0;
 server.headersTimeout = 0;
 
-await ensureCorpus();
+applySchemaIfEmpty(mainDbPath());
 startChild();
 await waitReady();
 server.listen(PORT, '0.0.0.0', () => {
   console.log(
     `[serve] front-controller on :${PORT} -> SSR :${INTERNAL_PORT}; ingest ${TOKEN ? 'enabled' : 'DISABLED (no token)'}`,
   );
+  // Now that we're serving (health check can pass), restore the corpus from Object Storage if needed.
+  void restoreInBackground();
 });
