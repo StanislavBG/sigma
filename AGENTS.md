@@ -19,9 +19,7 @@ There are two deployments. Keep them straight:
 and the same source** (ЦАИС ЕОП, `storage.eop.bg`) and must stay **consistent with Core** — same domain
 model, same numbers, no fabricated/sample data. When asked to "check for drift", verify Plus has not
 diverged from Core's data model/semantics and is purely additive (extra hosting + the live publish
-pipeline + analytical emphasis on **Network** and **Competition**). The public-facing summary of this
-relationship is `docs/sigma-plus-vs-core.html` and the on-site "Какво е различно?" overlay
-(`apps/web/app/components/WhatIsDifferent.tsx`) — keep those two in sync.
+pipeline + analytical emphasis on **Network** and **Competition**).
 
 ## Repository model
 
