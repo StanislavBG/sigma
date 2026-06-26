@@ -2508,7 +2508,7 @@ details.row .body .signal .why {
   stroke-linejoin: round;
   pointer-events: none;
 }
-/* Non-centre nodes are anchors → show the click affordance and an accent ring on hover/focus. */
+/* Non-centre nodes are anchors to a profile page → show the click affordance and an accent ring. */
 .network-svg a {
   cursor: pointer;
 }
@@ -2520,12 +2520,20 @@ details.row .body .signal .why {
 .network-svg a:focus-visible {
   outline: none;
 }
+/* Controls row above the graph: the edge-value toggle plus, once you've browsed to another node,
+   the Open / Reset actions. Wraps on narrow screens. */
+.net-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0 0 8px;
+}
 /* Edge-label toggle (pure CSS, no JS): unchecked hides every .edge-label. */
 .net-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: 0 0 8px;
   font: 12px var(--font-mono, monospace);
   color: var(--ink-soft, #555);
   cursor: pointer;
@@ -2536,6 +2544,46 @@ details.row .body .signal .why {
 }
 .net-graph:has(.net-toggle input:not(:checked)) .edge-label {
   display: none;
+}
+/* Browse actions — appear only after a client-side re-centre (no JS = no recentre = hidden). */
+.net-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.net-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font: 600 12px var(--font-mono, monospace);
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.net-btn:hover {
+  filter: brightness(0.94);
+}
+.net-btn-ghost {
+  color: var(--ink, #222);
+  background: transparent;
+  border-color: var(--rule, #d8d6cf);
+}
+.net-loading {
+  font: 12px var(--font-mono, monospace);
+  color: var(--ink-soft, #555);
+}
+.net-hint {
+  font: 12px var(--font-mono, monospace);
+  color: var(--ink-soft, #888);
+}
+.net-error {
+  font: 12px var(--font-mono, monospace);
+  color: var(--danger, #b3261e);
 }
 .net-legend {
   display: flex;
