@@ -1,13 +1,16 @@
 import { Link } from 'react-router';
 import { count, money, moneyBare, pct, periodRange, plural } from '@sigma/shared';
-import { authorityIdFromSlug, getAuthority } from '@sigma/db';
+import { authorityIdFromSlug, getAuthority, getEntityNetwork } from '@sigma/db';
 import type { Route } from './+types/authority';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
 import { FactsList } from '../components/FactsList';
 import { StackedBar } from '../components/StackedBar';
 import { ContractMiniTable } from '../components/ContractMiniTable';
+import { NetworkGraph } from '../components/NetworkGraph';
+import { DataTable } from '../components/DataTable';
 import { ShareBar, Chip, Section } from '../components/ui';
+import { networkColumns, networkRows } from '../lib/entity-tables';
 import { publicCache } from '../lib/cache';
 import { coverageRange, getCoverageMeta } from '../lib/coverage';
 import { withDbRetry } from '../lib/retry';
@@ -33,17 +36,21 @@ export async function loader({ params, context }: Route.LoaderArgs) {
   if (!eik?.trim()) throw new Response('Not Found', { status: 404 });
   const db = context.cloudflare.env.DB;
   return withDbRetry(async () => {
-    const [authority, coverage] = await Promise.all([
+    const [authority, coverage, network] = await Promise.all([
       getAuthority(db, authorityIdFromSlug(eik)),
       getCoverageMeta(db),
+      getEntityNetwork(db, { kind: 'authority', id: authorityIdFromSlug(eik) }, {
+        includeCenterOptions: false,
+      }),
     ]);
     if (!authority) throw new Response('Not Found', { status: 404 });
-    return { authority, coverage };
+    return { authority, coverage, network };
   });
 }
 
 export default function Authority({ loaderData }: Route.ComponentProps) {
   const a = loaderData.authority;
+  const network = loaderData.network;
   const range = coverageRange(loaderData.coverage.coverageEndYear);
   const topSectors = a.sectors
     .slice(0, 3)
@@ -159,11 +166,33 @@ export default function Authority({ loaderData }: Route.ComponentProps) {
               </Link>
             </p>
           )}
-          <p className="small muted mt-s3">
-            <Link to={`/network?center=a:${a.eik}`}>
-              Виж мрежата на връзките около {a.name} →
-            </Link>
-          </p>
+        </Section>
+
+        <Section
+          id="network"
+          title="Мрежа"
+          hint={
+            <span>
+              Най-силните преки връзки около институцията и по една следваща връзка за всеки
+              контрагент. <Link to={`/network?center=a:${a.eik}`}>Виж пълната мрежа →</Link>
+            </span>
+          }
+        >
+          {network.center && network.nodes.length >= 2 ? (
+            <>
+              <NetworkGraph data={network} />
+              <div className="sr-only">
+                <DataTable
+                  columns={networkColumns}
+                  rows={networkRows(network)}
+                  getKey={(r) => `${r.from}-${r.to}`}
+                  caption="Връзки в графа"
+                />
+              </div>
+            </>
+          ) : (
+            <p className="muted">Няма достатъчно връзки за граф.</p>
+          )}
         </Section>
 
         <div className="two-col">

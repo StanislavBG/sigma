@@ -56,10 +56,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 interface LinkRow {
-  fromLabel: string;
-  fromHref: string;
-  toLabel: string;
-  toHref: string;
+  from: string;
+  to: string;
   valueEur: number;
   contracts: number;
 }
@@ -82,26 +80,15 @@ export default function Network({ loaderData }: Route.ComponentProps) {
     const authority = a?.kind === 'authority' ? a : b;
     const company = a?.kind === 'authority' ? b : a;
     return {
-      fromLabel: authority?.label ?? e.from,
-      fromHref: authority ? `/authorities/${authority.slug}` : '',
-      toLabel: company?.label ?? e.to,
-      toHref: company ? `/companies/${company.slug}` : '',
+      from: authority?.label ?? e.from,
+      to: company?.label ?? e.to,
       valueEur: e.valueEur,
       contracts: e.contracts,
     };
   });
   const columns: Column<LinkRow>[] = [
-    {
-      key: 'from',
-      header: 'От',
-      isTitle: true,
-      cell: (r) => (r.fromHref ? <Link to={r.fromHref}>{r.fromLabel}</Link> : r.fromLabel),
-    },
-    {
-      key: 'to',
-      header: 'Към',
-      cell: (r) => (r.toHref ? <Link to={r.toHref}>{r.toLabel}</Link> : r.toLabel),
-    },
+    { key: 'from', header: 'От', isTitle: true, cell: (r) => r.from },
+    { key: 'to', header: 'Към', cell: (r) => r.to },
     { key: 'value', header: 'Стойност', align: 'money', cell: (r) => money(r.valueEur) },
     {
       key: 'contracts',
@@ -163,7 +150,7 @@ export default function Network({ loaderData }: Route.ComponentProps) {
                   Връзки около <em>{data.center.label}</em>
                 </>
               }
-              hint="Цветовете различават център, институции и фирми. Дебелината на връзката е стойността. Клик върху възел центрира графа върху него."
+              hint="Цветовете различават център, институции и фирми. Дебелината на връзката е стойността."
             >
               <NetworkGraph data={data} />
             </Section>
@@ -172,7 +159,7 @@ export default function Network({ loaderData }: Route.ComponentProps) {
               <DataTable
                 columns={columns}
                 rows={rows}
-                getKey={(r) => `${r.fromLabel}-${r.toLabel}`}
+                getKey={(r) => `${r.from}-${r.to}`}
                 caption="Връзки в графа"
               />
             </Section>
