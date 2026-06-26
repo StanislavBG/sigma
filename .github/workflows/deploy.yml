@@ -57,7 +57,10 @@ jobs:
 
   deploy:
     needs: detect
-    if: needs.detect.outputs.env != ''
+    # Cloudflare deploy is Sigma Core only. Forks (e.g. Sigma Plus on Replit) have no CF
+    # secrets and must not run this job — it would always trip the credentials guard and turn
+    # the pipeline red. The condition is true on Core (unchanged behavior) and skips elsewhere.
+    if: needs.detect.outputs.env != '' && github.repository == 'midt-bg/sigma'
     runs-on: ubuntu-latest
     environment: ${{ needs.detect.outputs.env }}
     concurrency:
