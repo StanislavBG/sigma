@@ -1,18 +1,27 @@
 import { Link } from 'react-router';
-import { count, isNaturalPersonProfileName, money, moneyBare, pct, periodRange, plural } from '@sigma/shared';
-import { bidderIdFromSlug, getCompany, getEntityNetwork } from '@sigma/db';
+import {
+  count,
+  isNaturalPersonProfileName,
+  money,
+  moneyBare,
+  pct,
+  periodRange,
+  plural,
+} from '@sigma/shared';
+import { bidderIdFromSlug, getCompany, getEntityNetwork, getSpendingTrend } from '@sigma/db';
 import type { Route } from './+types/company';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
 import { FactsList } from '../components/FactsList';
 import { StackedBar } from '../components/StackedBar';
-import { ContractMiniTable } from '../components/ContractMiniTable';
-import { NetworkGraph } from '../components/NetworkGraph';
 import { DataTable } from '../components/DataTable';
+import { TrendChart } from '../components/TrendChart';
+import { NetworkGraph } from '../components/NetworkGraph';
+import { ContractMiniTable } from '../components/ContractMiniTable';
 import { ShareBar, Chip, OwnershipChip, Section, ExternalEikLink } from '../components/ui';
-import { networkColumns, networkRows } from '../lib/entity-tables';
 import { publicCache } from '../lib/cache';
 import { coverageRange, getCoverageMeta } from '../lib/coverage';
+import { networkColumns, networkRows, trendYearColumns } from '../lib/entity-tables';
 import { withDbRetry } from '../lib/retry';
 import { seoMeta } from '../lib/meta';
 
@@ -58,19 +67,20 @@ export async function loader({ params, context }: Route.LoaderArgs) {
   if (!id) throw new Response('Not Found', { status: 404 });
   const db = context.cloudflare.env.DB;
   return withDbRetry(async () => {
-    const [company, coverage, network] = await Promise.all([
+    const [company, coverage, trend, network] = await Promise.all([
       getCompany(db, id),
       getCoverageMeta(db),
+      getSpendingTrend(db, { bidderId: id, granularity: 'month' }, { includeSectors: false }),
       getEntityNetwork(db, { kind: 'company', id }, { includeCenterOptions: false }),
     ]);
     if (!company) throw new Response('Not Found', { status: 404 });
-    return { company, coverage, network };
+    return { company, coverage, trend, network };
   });
 }
 
 export default function Company({ loaderData }: Route.ComponentProps) {
   const c = loaderData.company;
-  const network = loaderData.network;
+  const { trend, network } = loaderData;
   const range = coverageRange(loaderData.coverage.coverageEndYear);
   const noEikCompany = !c.isConsortium && !c.hasEik;
   const subjectPhrase = c.isConsortium ? 'това обединение' : 'тази компания';
@@ -153,6 +163,55 @@ export default function Company({ loaderData }: Route.ComponentProps) {
             },
           ]}
         />
+
+        <Section
+          id="trend"
+          title="Тренд"
+          hint={`Спечеленото от ${c.displayName} във времето. Договорите без валидна дата не влизат в графиката.`}
+        >
+          {trend.points.length >= 2 ? (
+            <>
+              <TrendChart points={trend.points} granularity={trend.granularity} />
+              <div className="mt-8">
+                <DataTable
+                  columns={trendYearColumns}
+                  rows={trend.years}
+                  getKey={(r) => r.year}
+                  caption="Разходи по години"
+                />
+              </div>
+            </>
+          ) : (
+            <p className="muted">Няма достатъчно данни за времева графика.</p>
+          )}
+        </Section>
+
+        <Section
+          id="network"
+          title="Мрежа"
+          hint={
+            <span>
+              Най-силните преки връзки около {subjectPhrase} и по една следваща връзка за всеки
+              възложител. <Link to={`/network?center=c:${c.slug}`}>Виж пълната мрежа →</Link>
+            </span>
+          }
+        >
+          {network.center && network.nodes.length >= 2 ? (
+            <>
+              <NetworkGraph data={network} />
+              <div className="sr-only">
+                <DataTable
+                  columns={networkColumns}
+                  rows={networkRows(network)}
+                  getKey={(r) => `${r.from}-${r.to}`}
+                  caption="Връзки в графа"
+                />
+              </div>
+            </>
+          ) : (
+            <p className="muted">Няма достатъчно връзки за граф.</p>
+          )}
+        </Section>
 
         {/* Consortium membership. Shown only when the source row gave us something to break out
             (a `;`-list or the rare free-text dump). Plain companies and one-name "ИНТЕРБОЛГАРСТРОЙ
@@ -247,33 +306,6 @@ export default function Company({ loaderData }: Route.ComponentProps) {
                 … още {count(c.moreAuthorities)} институции — виж всички договори →
               </Link>
             </p>
-          )}
-        </Section>
-
-        <Section
-          id="network"
-          title="Мрежа"
-          hint={
-            <span>
-              Най-силните преки връзки около компанията и по една следваща връзка за всеки
-              контрагент. <Link to={`/network?center=c:${c.slug}`}>Виж пълната мрежа →</Link>
-            </span>
-          }
-        >
-          {network.center && network.nodes.length >= 2 ? (
-            <>
-              <NetworkGraph data={network} />
-              <div className="sr-only">
-                <DataTable
-                  columns={networkColumns}
-                  rows={networkRows(network)}
-                  getKey={(r) => `${r.from}-${r.to}`}
-                  caption="Връзки в графа"
-                />
-              </div>
-            </>
-          ) : (
-            <p className="muted">Няма достатъчно връзки за граф.</p>
           )}
         </Section>
 
