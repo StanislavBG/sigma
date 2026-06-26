@@ -159,6 +159,11 @@ export default function Authority({ loaderData }: Route.ComponentProps) {
               </Link>
             </p>
           )}
+          <p className="small muted mt-s3">
+            <Link to={`/network?center=a:${a.eik}`}>
+              Виж мрежата на връзките около {a.name} →
+            </Link>
+          </p>
         </Section>
 
         <div className="two-col">

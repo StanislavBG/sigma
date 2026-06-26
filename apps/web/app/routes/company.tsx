@@ -240,6 +240,11 @@ export default function Company({ loaderData }: Route.ComponentProps) {
               </Link>
             </p>
           )}
+          <p className="small muted mt-s3">
+            <Link to={`/network?center=c:${c.slug}`}>
+              Виж мрежата на връзките около {c.displayName.replace(/\.$/, '')} →
+            </Link>
+          </p>
         </Section>
 
         <div className="two-col">
