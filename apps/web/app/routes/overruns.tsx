@@ -1,6 +1,12 @@
 import { Link, useSearchParams } from 'react-router';
-import { count, money, signedPct } from '@sigma/shared';
-import { getTopOverruns, type OverrunRow } from '@sigma/db';
+import { count, money, moneyBare, pct, signedPct } from '@sigma/shared';
+import {
+  getOverrunsAnalytics,
+  type OverrunAuthorityRow,
+  type OverrunRow,
+  type OverrunSectorRow,
+  type OverrunYearRow,
+} from '@sigma/db';
 import type { Route } from './+types/overruns';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
@@ -17,7 +23,7 @@ export function meta({ matches }: Route.MetaArgs) {
     path: '/overruns',
     title: 'Раздуване — СИГМА',
     description:
-      'Кои договори се раздуха най-много след подписването чрез анекси. Класация по абсолютно и процентно нарастване, всеки лев проследим до конкретния договор.',
+      'Кои договори се раздуха най-много след подписването чрез анекси. Класация по абсолютно и процентно нарастване, по институции, по сектори и по години — всеки лев проследим до конкретния договор.',
   });
 }
 
@@ -29,12 +35,13 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const by = new URL(request.url).searchParams.get('by') === 'percent' ? 'percent' : 'absolute';
   const { env } = context.cloudflare;
   return withDbRetry(async () => {
-    const data = await getTopOverruns(env.DB, { by });
+    const data = await getOverrunsAnalytics(env.DB, { by });
     return { data, by };
   });
 }
 
-const columns: Column<OverrunRow>[] = [
+// Leaderboard of the most-ballooned individual contracts (absolute / percent toggle).
+const contractColumns: Column<OverrunRow>[] = [
   { key: 'rank', header: '#', isRank: true, cell: (_r, i) => i + 1 },
   {
     key: 'subject',
@@ -75,13 +82,77 @@ const columns: Column<OverrunRow>[] = [
   },
 ];
 
+// „Кой системно подписва ниско и после раздува“ — authorities by total overrun €.
+const authorityColumns: Column<OverrunAuthorityRow>[] = [
+  { key: 'rank', header: '#', isRank: true, cell: (_r, i) => i + 1 },
+  {
+    key: 'authority',
+    header: 'Възложител',
+    isTitle: true,
+    cell: (r) => <Link to={`/authorities/${r.authoritySlug}`}>{r.authorityName}</Link>,
+  },
+  {
+    key: 'total',
+    header: 'Общо раздуване (€)',
+    align: 'money',
+    cell: (r) => moneyBare(r.totalOverrunEur),
+  },
+  { key: 'avg', header: 'Средно раздуване', align: 'num', cell: (r) => signedPct(r.avgPct) },
+  {
+    key: 'count',
+    header: 'Договори',
+    align: 'num',
+    secondary: true,
+    cell: (r) => count(r.count),
+  },
+];
+
+// Which CPV sectors inflate most.
+const sectorColumns: Column<OverrunSectorRow>[] = [
+  { key: 'rank', header: '#', isRank: true, cell: (_r, i) => i + 1 },
+  { key: 'sector', header: 'Сектор (CPV)', isTitle: true, cell: (r) => r.label },
+  {
+    key: 'total',
+    header: 'Общо раздуване (€)',
+    align: 'money',
+    cell: (r) => moneyBare(r.totalOverrunEur),
+  },
+  { key: 'avg', header: 'Средно раздуване', align: 'num', cell: (r) => signedPct(r.avgPct) },
+  {
+    key: 'count',
+    header: 'Договори',
+    align: 'num',
+    secondary: true,
+    cell: (r) => count(r.count),
+  },
+];
+
+// Overrun € by signing year — the trend.
+const yearColumns: Column<OverrunYearRow>[] = [
+  { key: 'year', header: 'Година на сключване', isTitle: true, cell: (r) => r.year },
+  {
+    key: 'total',
+    header: 'Общо раздуване (€)',
+    align: 'money',
+    cell: (r) => moneyBare(r.totalOverrunEur),
+  },
+  { key: 'count', header: 'Договори', align: 'num', cell: (r) => count(r.count) },
+];
+
 export default function Overruns({ loaderData }: Route.ComponentProps) {
   const { data, by } = loaderData;
+  const { corpus, rows, byAuthority, bySector, byYear } = data;
   const [sp] = useSearchParams();
 
   const totals: Total[] = [
-    { num: money(data.totalOverrunEur), label: 'общо раздуване след подписване' },
-    { num: count(data.count), label: 'договора с нараснала стойност' },
+    { num: money(corpus.totalOverrunEur), label: 'общо раздуване след подписване' },
+    { num: count(corpus.count), label: 'договора с нараснала стойност' },
+    { num: corpus.count ? signedPct(corpus.medianPct) : '—', label: 'медианно раздуване' },
+    { num: corpus.count ? signedPct(corpus.avgPct) : '—', label: 'средно раздуване' },
+    {
+      num: corpus.corpusSigningEur > 0 ? pct(corpus.shareOfSigning) : '—',
+      label: 'дял от стойността при сключване',
+    },
   ];
 
   const sortHref = (next: 'absolute' | 'percent') => {
@@ -99,7 +170,7 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
         <PageHeader
           kicker="Анализ"
           title="Раздуване на договорите"
-          lede="Кои договори по обществени поръчки се раздуха най-много, след като вече бяха подписани — чрез последващи анекси. Сравняваме стойността при сключване със сегашната стойност и подреждаме по най-голямото нарастване. Това е описателен показател, не присъда: зад всеки лев стои конкретният договор."
+          lede="Кои договори по обществени поръчки се раздуха най-много, след като вече бяха подписани — чрез последващи анекси. Сравняваме стойността при сключване със сегашната стойност и подреждаме по най-голямото нарастване — по договори, по институции, по сектори и по години. Това е описателен показател, не присъда: зад всеки лев стои конкретният договор."
         />
 
         <TotalsStrip totals={totals} label="Обобщение на раздуването" />
@@ -132,10 +203,10 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
             </Link>
           </div>
 
-          {data.rows.length ? (
+          {rows.length ? (
             <DataTable
-              columns={columns}
-              rows={data.rows}
+              columns={contractColumns}
+              rows={rows}
               getKey={(r) => r.contractId}
               caption="Договори, подредени по нарастване на стойността след подписване"
             />
@@ -145,6 +216,75 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
                 В обхванатите данни няма договори с потвърдено нарастване на стойността след
                 подписване. Щом анекс увеличи стойност, договорът ще се появи тук.
               </p>
+            </Callout>
+          )}
+        </Section>
+
+        <Section
+          id="by-authority"
+          title={
+            <>
+              Кои <em>институции</em> раздуват най-много
+            </>
+          }
+          hint="Възложители, подредени по общата сума на раздуването. Високо общо при ниско средно говори за обем; високо средно — за систематично подписване ниско и последващо нарастване."
+        >
+          {byAuthority.length ? (
+            <DataTable
+              columns={authorityColumns}
+              rows={byAuthority}
+              getKey={(r) => r.authoritySlug}
+              caption="Институции, подредени по обща сума на раздуването"
+            />
+          ) : (
+            <Callout title="Няма данни по институции">
+              <p className="m-0">Все още няма институции с раздути договори в обхванатите данни.</p>
+            </Callout>
+          )}
+        </Section>
+
+        <Section
+          id="by-sector"
+          title={
+            <>
+              Кои <em>сектори</em> се раздуват най-много
+            </>
+          }
+          hint="Раздуване по CPV-раздел (първите две цифри на кода). Показва къде нарастването след подписване е концентрирано."
+        >
+          {bySector.length ? (
+            <DataTable
+              columns={sectorColumns}
+              rows={bySector}
+              getKey={(r) => r.division || r.label}
+              caption="Сектори (CPV-раздели), подредени по обща сума на раздуването"
+            />
+          ) : (
+            <Callout title="Няма данни по сектори">
+              <p className="m-0">Все още няма сектори с раздути договори в обхванатите данни.</p>
+            </Callout>
+          )}
+        </Section>
+
+        <Section
+          id="by-year"
+          title={
+            <>
+              Раздуване <em>във времето</em>
+            </>
+          }
+          hint="Обща сума на раздуването по година на сключване на договора. Договори без разпознаваема дата на сключване попадат в „Неизвестна“."
+        >
+          {byYear.length ? (
+            <DataTable
+              columns={yearColumns}
+              rows={byYear}
+              getKey={(r) => r.year}
+              caption="Раздуване по година на сключване на договора"
+            />
+          ) : (
+            <Callout title="Няма данни по години">
+              <p className="m-0">Все още няма раздути договори с разпознаваема година в данните.</p>
             </Callout>
           )}
         </Section>
