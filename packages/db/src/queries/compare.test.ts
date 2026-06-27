@@ -49,7 +49,7 @@ describe('getCompareLeaderboard', () => {
     });
     expect(board.rows.map((r) => r.rank)).toEqual([1, 2]);
     expect(board.rows[0]).toMatchObject({ slug: 'A', name: 'Алфа', rank: 1, highlighted: true });
-    expect(board.rows[1].highlighted).toBe(false); // auth:B not compared
+    expect(board.rows[1]?.highlighted).toBe(false); // auth:B not compared
     expect(board.maxValue).toBe(1000);
     expect(board.qualifying).toBe(200);
     // auth:A is in the top list → rank reused (1). auth:Z is outside → lookup + count → rank 5.
