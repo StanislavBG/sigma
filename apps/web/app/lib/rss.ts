@@ -1,5 +1,5 @@
 // Pure RSS 2.0 builder for the „Най-ново" feed. Kept free of React/DB so it unit-tests without a
-// worker or sqlite — the resource route (routes/latest.rss.tsx) only wires data + headers around it.
+// worker or sqlite — the resource route (routes/trends.rss.tsx) only wires data + headers around it.
 
 import type { ContractListItem } from '@sigma/api-contract';
 import { money } from '@sigma/shared';
@@ -48,9 +48,9 @@ export function buildContractsRss(
 ): string {
   const base = opts?.base ?? FEED_BASE;
   const channel = [
-    `<title>СИГМА — Най-ново</title>`,
-    `<link>${xmlEscape(`${base}/latest`)}</link>`,
-    `<atom:link href="${xmlEscape(`${base}/latest.rss`)}" rel="self" type="application/rss+xml" />`,
+    `<title>СИГМА — Най-нови договори</title>`,
+    `<link>${xmlEscape(`${base}/trends`)}</link>`,
+    `<atom:link href="${xmlEscape(`${base}/trends.rss`)}" rel="self" type="application/rss+xml" />`,
     `<description>${xmlEscape('Най-новите сключени договори по обществени поръчки в България.')}</description>`,
     `<language>bg</language>`,
   ];

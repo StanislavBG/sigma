@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContractListItem } from '@sigma/api-contract';
-import { buildContractsRss, rfc822, xmlEscape, FEED_BASE } from '../lib/rss';
+import { buildContractsRss, rfc822, xmlEscape, FEED_BASE } from './rss';
 
 function makeItem(over: Partial<ContractListItem> = {}): ContractListItem {
   return {

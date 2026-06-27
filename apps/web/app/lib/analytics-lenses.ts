@@ -29,11 +29,6 @@ export const ANALYTICS_LENSES = [
     title: 'Сравнение',
     desc: 'Две институции или две компании, едно до друго по общите показатели.',
   },
-  {
-    href: '/latest',
-    title: 'Най-ново',
-    desc: 'Най-новите сключени договори, с емисия (RSS) за следене без профил.',
-  },
 ] as const;
 
 export const ANALYTICS_NAV_PATHS = [
