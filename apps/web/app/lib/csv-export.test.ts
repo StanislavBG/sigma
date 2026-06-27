@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { CONTRACT_FILTER_KEYS } from '@sigma/db';
 import { DATA_SOURCE } from './dataSource';
 import { isUnfilteredCsvExport, servedCsvExport } from './csv-export';
 
@@ -225,7 +226,10 @@ class InMemoryR2 {
   }
 }
 
-function envWith(r2: InMemoryR2, refreshedAt: string | null | undefined = REFRESHED_AT): ServedCsvEnv {
+function envWith(
+  r2: InMemoryR2,
+  refreshedAt: string | null | undefined = REFRESHED_AT,
+): ServedCsvEnv {
   return { DB: fakeDb(refreshedAt), CSV_CACHE: r2 as unknown as R2Bucket };
 }
 
@@ -302,11 +306,32 @@ describe('isUnfilteredCsvExport', () => {
     ['authority', { authority: '123456789' }],
     ['bidder', { bidder: 'acme' }],
     ['q', { q: 'rail' }],
+    ['bids', { bids: 'one' }],
     ['companies.kinds', { kinds: ['company'] }],
     ['companies.countBucket', { countBucket: '2-5' }],
     ['authorities.types', { types: ['municipality'] }],
   ])('treats %s as narrowing', (_name, params) => {
     expect(isUnfilteredCsvExport({ sort: 'value-desc', ...params })).toBe(false);
+  });
+
+  // Completeness guard (issue #138): every filter the contracts query consumes must also be seen by
+  // the cache classifier, or a filtered export gets served from / written to the unfiltered cache
+  // object. If someone adds a key to CONTRACT_FILTER_KEYS without teaching isUnfilteredCsvExport about
+  // it, this fails — closing the whole bug class, not just `bids`.
+  it.each(CONTRACT_FILTER_KEYS)('classifier recognises the %s contract filter', (key) => {
+    const active: Record<string, unknown> = {
+      years: ['2025'],
+      sectors: ['45'],
+      procedureGroups: ['open'],
+      valueBucket: 'gt100m',
+      eu: 'eu',
+      authority: '123456789',
+      bidder: 'acme',
+      q: 'rail',
+      bids: 'one',
+    };
+    expect(active[key]).toBeDefined(); // a new filter key without a representative value here is a bug
+    expect(isUnfilteredCsvExport({ sort: 'value-desc', [key]: active[key] })).toBe(false);
   });
 });
 
@@ -377,11 +402,15 @@ describe('servedCsvExport', () => {
     const etag = primed.headers.get('ETag');
     await primed.text();
 
-    const response = await serve(r2, vi.fn(() => csvResponse('from db\n')), {
-      request: new Request('http://local/contracts.csv', {
-        headers: { 'If-None-Match': etag ?? '' },
-      }),
-    });
+    const response = await serve(
+      r2,
+      vi.fn(() => csvResponse('from db\n')),
+      {
+        request: new Request('http://local/contracts.csv', {
+          headers: { 'If-None-Match': etag ?? '' },
+        }),
+      },
+    );
 
     expect(response.status).toBe(304);
     expect(response.headers.get('ETag')).toBe(etag);
@@ -392,16 +421,27 @@ describe('servedCsvExport', () => {
 
   it('serves byte ranges from R2', async () => {
     const r2 = new InMemoryR2();
-    await (await serve(r2, vi.fn(() => csvResponse()))).text();
+    await (
+      await serve(
+        r2,
+        vi.fn(() => csvResponse()),
+      )
+    ).text();
 
-    const response = await serve(r2, vi.fn(() => csvResponse('from db\n')), {
-      request: new Request('http://local/contracts.csv', {
-        headers: { Range: 'bytes=0-9' },
-      }),
-    });
+    const response = await serve(
+      r2,
+      vi.fn(() => csvResponse('from db\n')),
+      {
+        request: new Request('http://local/contracts.csv', {
+          headers: { Range: 'bytes=0-9' },
+        }),
+      },
+    );
 
     expect(response.status).toBe(206);
-    expect(response.headers.get('Content-Range')).toBe(`bytes 0-9/${encoder.encode(CSV_BODY).length}`);
+    expect(response.headers.get('Content-Range')).toBe(
+      `bytes 0-9/${encoder.encode(CSV_BODY).length}`,
+    );
     expect(response.headers.get('Content-Length')).toBe('10');
     expect(response.headers.get('X-Csv-Cache')).toBe('HIT');
     expect(await response.text()).toBe('0123456789');
