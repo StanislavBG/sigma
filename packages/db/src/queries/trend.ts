@@ -47,6 +47,9 @@ export interface TrendParams {
 
 export interface TrendQueryOptions {
   includeSectors?: boolean;
+  // The seasonality (quarters) + top-movers (sectorYears) scans. Defaults to includeSectors so existing
+  // callers are unchanged; the /trends dashboard sets it false (it renders neither) to drop two scans.
+  includeInsights?: boolean;
 }
 
 const START = '2020-01-01';
@@ -161,6 +164,7 @@ export async function getSpendingTrend(
   options: TrendQueryOptions = {},
 ): Promise<TrendDataPlus> {
   const includeSectors = options.includeSectors ?? true;
+  const includeInsights = options.includeInsights ?? includeSectors;
   const granularity = p.granularity === 'year' ? 'year' : 'month';
   const periodLen = granularity === 'year' ? 4 : 7; // substr length: 'YYYY' vs 'YYYY-MM'
   const s = scope(p);
@@ -201,7 +205,7 @@ export async function getSpendingTrend(
       .first<CoverageRow>(),
     includeSectors ? sectorOptions(db) : Promise.resolve([]),
     db.prepare('SELECT as_of FROM home_totals WHERE id = 1').first<{ as_of: string | null }>(),
-    includeSectors
+    includeInsights
       ? db
           .prepare(
             `SELECT substr(c.signed_at, 1, 4) AS year, ${QUARTER_EXPR} AS quarter,
@@ -213,7 +217,7 @@ export async function getSpendingTrend(
           .bind(START, ...s.params)
           .all<QuarterRow>()
       : Promise.resolve({ results: [] as QuarterRow[] }),
-    includeSectors
+    includeInsights
       ? db
           .prepare(
             `SELECT substr(t.cpv_code, 1, 2) AS division, substr(c.signed_at, 1, 4) AS year,

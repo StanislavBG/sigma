@@ -1,0 +1,75 @@
+import { describe, expect, it } from 'vitest';
+import type { TrendPoint } from '@sigma/api-contract';
+import { buildForecast, estimateYoyGrowth } from './trends-forecast';
+
+// Build a full calendar year of monthly points with a flat per-month value/count.
+function year(
+  y: number,
+  monthlyValue: number,
+  monthlyCount: number,
+  partial = false,
+): TrendPoint[] {
+  return Array.from({ length: 12 }, (_, i) => ({
+    period: `${y}-${String(i + 1).padStart(2, '0')}`,
+    valueEur: monthlyValue,
+    contracts: monthlyCount,
+    // mark the final month of the year partial when requested
+    partial: partial && i === 11,
+  }));
+}
+
+describe('estimateYoyGrowth', () => {
+  it('recovers the YoY growth factor from complete years', () => {
+    const points = [...year(2021, 100, 50), ...year(2022, 120, 55), ...year(2023, 144, 60.5)];
+    const g = estimateYoyGrowth(points);
+    expect(g.value).toBeCloseTo(1.2, 5); // 100 → 120 → 144
+    expect(g.count).toBeCloseTo(1.1, 5); // 50 → 55 → 60.5
+  });
+
+  it('ignores the partial final year', () => {
+    const points = [
+      ...year(2021, 100, 50),
+      ...year(2022, 120, 55),
+      ...year(2023, 999, 999, true), // partial → excluded from the estimate
+    ];
+    const g = estimateYoyGrowth(points);
+    expect(g.value).toBeCloseTo(1.2, 5);
+  });
+
+  it('returns a flat factor with fewer than two complete years', () => {
+    expect(estimateYoyGrowth(year(2023, 100, 50, true))).toEqual({ value: 1, count: 1 });
+  });
+
+  it('clamps an absurd ratio into the sane band', () => {
+    const points = [...year(2021, 1, 1), ...year(2022, 1000, 1000)];
+    const g = estimateYoyGrowth(points);
+    expect(g.value).toBeLessThanOrEqual(2);
+    expect(g.value).toBeGreaterThanOrEqual(0.5);
+  });
+});
+
+describe('buildForecast', () => {
+  it('projects each month from the same month last year × growth, flagged forecast', () => {
+    const points = [...year(2022, 100, 50), ...year(2023, 120, 55)];
+    const fc = buildForecast(points, { value: 1.2, count: 1.1 });
+    // last complete = 2023-12, so forecast runs 2024-01 .. 2024-12 (end of next year)
+    expect(fc).toHaveLength(12);
+    expect(fc[0]!.period).toBe('2024-01');
+    expect(fc[0]!.forecast).toBe(true);
+    expect(fc[0]!.valueEur).toBeCloseTo(120 * 1.2, 5); // 2023-01 × 1.2
+    expect(fc[0]!.contracts).toBeCloseTo(55 * 1.1, 5);
+    expect(fc.at(-1)!.period).toBe('2024-12');
+  });
+
+  it('starts the month after the last COMPLETE month when the tail is partial', () => {
+    const points = [...year(2023, 100, 50), ...year(2024, 110, 52, true)];
+    // 2024-12 is partial → last complete is 2024-11 → first forecast month is 2024-12
+    const fc = buildForecast(points, { value: 1, count: 1 });
+    expect(fc[0]!.period).toBe('2024-12');
+    expect(fc.every((p) => p.forecast)).toBe(true);
+  });
+
+  it('returns nothing for an empty series', () => {
+    expect(buildForecast([])).toEqual([]);
+  });
+});

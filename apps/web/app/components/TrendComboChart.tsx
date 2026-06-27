@@ -1,0 +1,357 @@
+import { useMemo, useState } from 'react';
+import { count as fmtCount, money } from '@sigma/shared';
+import { buildChartModel } from '../lib/trends-chart';
+import type { DisplayPoint } from '../lib/trends-series';
+
+// Dual-axis combo chart for the /trends dashboard, server-rendered (no chart JS, like SankeyDiagram):
+// contract-count bars on a right axis, a € area/line split into actual vs forecast, a bold moving-
+// average trend line, a peak marker and a dashed „ПРОГНОЗА" band. The accessible figures live in the
+// „По години" table beside it (role="img" + aria-label here); hover is pure client enhancement layered
+// over per-point hit boxes. (The simpler sparkline used by the entity/analytics embeds stays in
+// TrendChart.tsx — this is the full dashboard variant.)
+//
+// Colours come from the app's CSS tokens via inline `style` (SVG presentation attributes can't take
+// var()), keeping the SVG on-palette. The contract-count measure uses translucent ink rather than a
+// second hue, per the accessibility convention (no blue, don't lean on colour alone — the bars also
+// carry the right-axis legend + the tooltip count).
+
+const BAR_ACTUAL = 'color-mix(in oklch, var(--ink) 30%, transparent)';
+const BAR_FORECAST = 'color-mix(in oklch, var(--ink) 14%, transparent)';
+const BAR_HOVER = 'color-mix(in oklch, var(--ink) 58%, transparent)';
+const BAND_FILL = 'color-mix(in oklch, var(--ink) 5%, transparent)';
+const MONO = "'IBM Plex Mono', ui-monospace, monospace";
+
+export function TrendComboChart({
+  points,
+  trendWindow,
+  barRatio,
+  ariaLabel,
+}: {
+  points: DisplayPoint[];
+  trendWindow: number;
+  barRatio: number;
+  ariaLabel: string;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const model = useMemo(
+    () => buildChartModel(points, { trendWindow, barRatio }),
+    [points, trendWindow, barRatio],
+  );
+  if (points.length < 2) return null;
+
+  const { dims, plotBottom } = model;
+  const { width, height, plotTop } = dims;
+  const hoverPt = hover != null ? model.points[hover] : null;
+  const hoverData = hover != null ? points[hover] : null;
+
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        width="100%"
+        height="auto"
+        role="img"
+        aria-label={ariaLabel}
+        style={{ display: 'block', overflow: 'visible' }}
+        onMouseLeave={() => setHover(null)}
+      >
+        <title>{ariaLabel}</title>
+        <defs>
+          <linearGradient
+            id="trendArea"
+            x1="0"
+            y1={plotTop}
+            x2="0"
+            y2={plotBottom}
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop offset="0" style={{ stopColor: 'var(--accent)', stopOpacity: 0.16 }} />
+            <stop offset="1" style={{ stopColor: 'var(--accent)', stopOpacity: 0 }} />
+          </linearGradient>
+        </defs>
+
+        {/* forecast band + "today" divider */}
+        {model.band && (
+          <>
+            <rect
+              x={model.band.x}
+              y={plotTop}
+              width={model.band.w}
+              height={plotBottom - plotTop}
+              style={{ fill: BAND_FILL }}
+            />
+            <line
+              x1={model.todayX!}
+              y1={plotTop}
+              x2={model.todayX!}
+              y2={plotBottom}
+              style={{ stroke: 'var(--accent)' }}
+              strokeWidth={1}
+              strokeDasharray="2 3"
+            />
+            <text
+              x={model.band.labelX}
+              y={model.band.labelY}
+              textAnchor="middle"
+              fontSize={8.5}
+              fontWeight={600}
+              letterSpacing="0.14em"
+              style={{ fill: 'var(--ink-mid)', fontFamily: MONO }}
+            >
+              ПРОГНОЗА
+            </text>
+          </>
+        )}
+
+        {/* left € axis gridlines */}
+        {model.gridLines.map((g, i) => (
+          <g key={`grid-${i}`}>
+            <line
+              x1={0}
+              y1={g.y}
+              x2={width}
+              y2={g.y}
+              style={{ stroke: 'var(--rule-soft)' }}
+              strokeWidth={1}
+            />
+            <text
+              x={2}
+              y={g.y - 3}
+              fontSize={9}
+              style={{ fill: 'var(--ink-soft)', fontFamily: MONO }}
+            >
+              {g.label}
+            </text>
+          </g>
+        ))}
+
+        {/* contract-count bars (right axis) */}
+        {model.bars.map((b, i) => (
+          <rect
+            key={`bar-${i}`}
+            x={b.x}
+            y={b.y}
+            width={b.w}
+            height={b.h}
+            style={{ fill: hover === i ? BAR_HOVER : b.forecast ? BAR_FORECAST : BAR_ACTUAL }}
+          />
+        ))}
+
+        {/* € area + line, split actual / forecast */}
+        <path d={model.actualArea} fill="url(#trendArea)" />
+        {model.forecastArea && (
+          <path d={model.forecastArea} fill="url(#trendArea)" opacity={0.45} />
+        )}
+        <path
+          d={model.actualLine}
+          fill="none"
+          style={{ stroke: 'var(--ink-soft)' }}
+          strokeWidth={1.1}
+          strokeLinejoin="round"
+        />
+        {model.forecastLine && (
+          <path
+            d={model.forecastLine}
+            fill="none"
+            style={{ stroke: 'var(--ink-soft)' }}
+            strokeWidth={1.1}
+            strokeDasharray="4 3"
+            strokeLinejoin="round"
+          />
+        )}
+
+        {/* bold moving-average trend line */}
+        <path
+          d={model.trendPath}
+          fill="none"
+          style={{ stroke: 'var(--ink)' }}
+          strokeWidth={2.3}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+
+        {/* right contract-count axis */}
+        <text
+          x={width}
+          y={plotTop}
+          textAnchor="end"
+          fontSize={8}
+          style={{ fill: 'var(--ink-mid)', fontFamily: MONO }}
+        >
+          договори ▸
+        </text>
+        {model.rightTicks.map((t, i) => (
+          <text
+            key={`rt-${i}`}
+            x={width}
+            y={t.y + 3}
+            textAnchor="end"
+            fontSize={8.5}
+            style={{ fill: 'var(--ink-mid)', fontFamily: MONO }}
+          >
+            {t.label}
+          </text>
+        ))}
+
+        {/* x-axis ticks */}
+        {model.xTicks.map((t, i) => (
+          <text
+            key={`xt-${i}`}
+            x={t.x}
+            y={height - 5}
+            textAnchor="middle"
+            fontSize={9}
+            style={{ fill: t.forecast ? 'var(--ink-soft)' : 'var(--ink-mid)', fontFamily: MONO }}
+          >
+            {t.label}
+          </text>
+        ))}
+
+        {/* peak marker */}
+        {model.peak && (
+          <>
+            <circle
+              cx={model.peak.x}
+              cy={model.peak.y}
+              r={3.4}
+              style={{ fill: 'var(--accent)', stroke: 'var(--paper-warm)' }}
+              strokeWidth={1.4}
+            />
+            <text
+              x={model.peak.labelX}
+              y={model.peak.labelY}
+              textAnchor={model.peak.anchor}
+              fontSize={9.5}
+              fontWeight={600}
+              style={{ fill: 'var(--accent)', fontFamily: MONO }}
+            >
+              {peakValueLabel(points, model.firstForecastIndex)}
+            </text>
+          </>
+        )}
+
+        {/* hover crosshair + dot */}
+        {hoverPt && (
+          <>
+            <line
+              x1={hoverPt.x}
+              y1={plotTop}
+              x2={hoverPt.x}
+              y2={plotBottom}
+              style={{ stroke: 'var(--accent)' }}
+              strokeWidth={1}
+              strokeDasharray="3 3"
+            />
+            <circle
+              cx={hoverPt.x}
+              cy={hoverPt.yValue}
+              r={3.8}
+              style={{ fill: 'var(--accent)', stroke: 'var(--paper-warm)' }}
+              strokeWidth={1.6}
+            />
+          </>
+        )}
+
+        {/* per-point hover hit boxes (transparent) */}
+        {model.hits.map((hit, i) => (
+          <rect
+            key={`hit-${i}`}
+            x={hit.x}
+            y={0}
+            width={hit.w}
+            height={height}
+            fill="transparent"
+            onMouseEnter={() => setHover(i)}
+          />
+        ))}
+      </svg>
+
+      {hoverPt && hoverData && (
+        <div
+          style={{
+            position: 'absolute',
+            pointerEvents: 'none',
+            left: `${hoverPt.leftPct}%`,
+            top: `${(Math.min(hoverPt.yValue, hoverPt.yCount) / height) * 100}%`,
+            transform: 'translate(-50%, -112%)',
+            background: 'var(--ink)',
+            color: 'var(--paper)',
+            padding: '7px 10px',
+            borderRadius: 3,
+            whiteSpace: 'nowrap',
+            zIndex: 5,
+            fontFamily: MONO,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 9,
+              letterSpacing: '0.06em',
+              opacity: 0.8,
+            }}
+          >
+            {hoverData.label}
+            {hoverData.forecast && (
+              <span
+                style={{
+                  border: '1px solid color-mix(in oklch, var(--accent) 50%, transparent)',
+                  color: 'var(--accent)',
+                  borderRadius: 2,
+                  padding: '1px 4px',
+                  fontSize: 7.5,
+                  letterSpacing: '0.1em',
+                }}
+              >
+                ПРОГНОЗА
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 5 }}>
+            <span
+              style={{
+                width: 8,
+                height: 2.4,
+                background: 'var(--accent)',
+                display: 'inline-block',
+                borderRadius: 2,
+              }}
+            />
+            <span style={{ fontSize: 9, opacity: 0.8 }}>разходи</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600 }}>
+              {money(hoverData.valueEur)}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 3 }}>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                background: 'color-mix(in oklch, var(--paper) 65%, var(--ink))',
+                display: 'inline-block',
+                borderRadius: 1,
+              }}
+            />
+            <span style={{ fontSize: 9, opacity: 0.8 }}>договори</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600 }}>
+              {fmtCount(Math.round(hoverData.contracts))}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The € value at the peak marker — the highest complete (non-forecast) display point.
+function peakValueLabel(points: DisplayPoint[], firstForecastIndex: number): string {
+  const lim = firstForecastIndex || points.length;
+  let peak: DisplayPoint | null = null;
+  for (let i = 0; i < lim; i += 1) {
+    const p = points[i]!;
+    if (!p.partial && (peak === null || p.valueEur > peak.valueEur)) peak = p;
+  }
+  return peak ? money(peak.valueEur) : '';
+}
