@@ -1,7 +1,10 @@
 // Keep this allow-list in sync with query params consumed by apps/web/app/routes loaders.
 export const CACHE_QUERY_PARAMS = new Set([
+  'a', // /compare — entity A slug
   'authority',
+  'b', // /compare — entity B slug
   'bidder',
+  'by', // /overruns — sort dimension (absolute | percent)
   'center',
   'count',
   'cursor',
