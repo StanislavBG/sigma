@@ -7,6 +7,36 @@
 import type { SectorRef, TrendData, TrendPoint, TrendYear } from '@sigma/api-contract';
 import { CPV_SECTORS } from '@sigma/config';
 
+// /trends-only extras layered on top of TrendData: the EU-funded slice of each point/year (for the
+// EU-vs-national split), the partial year (so the page can exclude it from derived stats), and the
+// raw rows for the seasonality callout and the year-over-year sector "top movers". The pure
+// derivations live in apps/web/app/lib/trends-insights.ts; this query only supplies the building
+// blocks. The two extra aggregations are gated behind includeSectors, so entity/analytics embeds
+// that pass includeSectors:false never pay for them.
+export interface TrendPointPlus extends TrendPoint {
+  euValueEur: number; // EU-funded value within the period; national = valueEur − euValueEur
+}
+export interface TrendYearPlus extends TrendYear {
+  euValueEur: number;
+}
+export interface TrendQuarterValue {
+  year: string; // 'YYYY'
+  quarter: number; // 1..4
+  valueEur: number;
+}
+export interface TrendSectorYearValue {
+  division: string; // CPV division (first 2 digits of cpv_code)
+  year: string; // 'YYYY'
+  valueEur: number;
+}
+export interface TrendDataPlus extends Omit<TrendData, 'points' | 'years'> {
+  points: TrendPointPlus[];
+  years: TrendYearPlus[];
+  partialYear: string | null;
+  quarters: TrendQuarterValue[]; // per (year, quarter) value, for the seasonality callout
+  sectorYears: TrendSectorYearValue[]; // per (division, year) value, for the top-movers list
+}
+
 export interface TrendParams {
   sector?: string | null;
   funding?: 'all' | 'eu' | 'national';
@@ -27,12 +57,25 @@ const YEAR_KNOWN = "substr(c.signed_at, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'";
 interface PeriodRow {
   period: string;
   value_eur: number;
+  eu_value_eur: number;
   contracts: number;
 }
 
 interface CoverageRow {
   dated: number;
   total: number;
+}
+
+interface QuarterRow {
+  year: string;
+  quarter: number;
+  value_eur: number;
+}
+
+interface SectorYearRow {
+  division: string;
+  year: string;
+  value_eur: number;
 }
 
 // Shared value + sector/funding scope (the date window lives only on the series query).
@@ -58,6 +101,28 @@ function scope(p: TrendParams): { join: string; where: string[]; params: unknown
   else if (p.funding === 'national') where.push('(c.eu_funded IS NULL OR c.eu_funded = 0)');
   return { join, where, params };
 }
+
+// Top-movers compares sectors against each other, so it deliberately drops the sector filter (a
+// single-sector scope has nothing to rank) but keeps funding/authority/bidder and always joins
+// tenders for the CPV division. Mirrors scope() minus the sector clause.
+function crossSectorScope(p: TrendParams): { where: string[]; params: unknown[] } {
+  const where = ['c.amount_eur IS NOT NULL'];
+  const params: unknown[] = [];
+  if (p.authorityId) {
+    where.push('t.authority_id = ?');
+    params.push(p.authorityId);
+  }
+  if (p.bidderId) {
+    where.push('c.bidder_id = ?');
+    params.push(p.bidderId);
+  }
+  if (p.funding === 'eu') where.push('c.eu_funded = 1');
+  else if (p.funding === 'national') where.push('(c.eu_funded IS NULL OR c.eu_funded = 0)');
+  return { where, params };
+}
+
+// month → quarter (1..4) on the signing date: (m + 2) / 3 in integer arithmetic.
+const QUARTER_EXPR = '((CAST(substr(c.signed_at, 6, 2) AS INTEGER) + 2) / 3)';
 
 // Continuous period keys (inclusive) for zero-filling gaps, so the chart has no holes.
 function fillPeriods(first: string, last: string, granularity: 'month' | 'year'): string[] {
@@ -94,18 +159,31 @@ export async function getSpendingTrend(
   db: D1Database,
   p: TrendParams,
   options: TrendQueryOptions = {},
-): Promise<TrendData> {
+): Promise<TrendDataPlus> {
   const includeSectors = options.includeSectors ?? true;
   const granularity = p.granularity === 'year' ? 'year' : 'month';
   const periodLen = granularity === 'year' ? 4 : 7; // substr length: 'YYYY' vs 'YYYY-MM'
   const s = scope(p);
 
   const seriesWhere = [YEAR_KNOWN, 'c.signed_at >= ?', "c.signed_at <= date('now')", ...s.where];
-  const [series, coverageRow, sectors, asOfRow] = await Promise.all([
+  // The /trends-only insights (seasonality, top movers). Gated behind includeSectors so the
+  // entity/analytics embeds never run these extra scans.
+  const cs = crossSectorScope(p);
+  const quartersWhere = [YEAR_KNOWN, 'c.signed_at >= ?', "c.signed_at <= date('now')", ...s.where];
+  const moversWhere = [
+    YEAR_KNOWN,
+    'c.signed_at >= ?',
+    "c.signed_at <= date('now')",
+    't.cpv_code IS NOT NULL',
+    ...cs.where,
+  ];
+  const [series, coverageRow, sectors, asOfRow, quarterRows, sectorYearRows] = await Promise.all([
     db
       .prepare(
         `SELECT substr(c.signed_at, 1, ${periodLen}) AS period,
-                COALESCE(SUM(c.amount_eur), 0) AS value_eur, COUNT(*) AS contracts
+                COALESCE(SUM(c.amount_eur), 0) AS value_eur,
+                COALESCE(SUM(CASE WHEN c.eu_funded = 1 THEN c.amount_eur ELSE 0 END), 0) AS eu_value_eur,
+                COUNT(*) AS contracts
          FROM contracts c ${s.join}
          WHERE ${seriesWhere.join(' AND ')}
          GROUP BY period ORDER BY period`,
@@ -123,6 +201,30 @@ export async function getSpendingTrend(
       .first<CoverageRow>(),
     includeSectors ? sectorOptions(db) : Promise.resolve([]),
     db.prepare('SELECT as_of FROM home_totals WHERE id = 1').first<{ as_of: string | null }>(),
+    includeSectors
+      ? db
+          .prepare(
+            `SELECT substr(c.signed_at, 1, 4) AS year, ${QUARTER_EXPR} AS quarter,
+                    COALESCE(SUM(c.amount_eur), 0) AS value_eur
+             FROM contracts c ${s.join}
+             WHERE ${quartersWhere.join(' AND ')}
+             GROUP BY year, quarter`,
+          )
+          .bind(START, ...s.params)
+          .all<QuarterRow>()
+      : Promise.resolve({ results: [] as QuarterRow[] }),
+    includeSectors
+      ? db
+          .prepare(
+            `SELECT substr(t.cpv_code, 1, 2) AS division, substr(c.signed_at, 1, 4) AS year,
+                    COALESCE(SUM(c.amount_eur), 0) AS value_eur
+             FROM contracts c JOIN tenders t ON t.id = c.tender_id
+             WHERE ${moversWhere.join(' AND ')}
+             GROUP BY division, year`,
+          )
+          .bind(START, ...cs.params)
+          .all<SectorYearRow>()
+      : Promise.resolve({ results: [] as SectorYearRow[] }),
   ]);
   // The final period (the as_of period) is still being filled; mark it so the chart and table do not
   // read its dip as a real decline, and so YoY is not computed against a partial year.
@@ -131,7 +233,7 @@ export async function getSpendingTrend(
   const partialYear = asOf ? asOf.slice(0, 4) : null;
 
   const rows = series.results;
-  let points: TrendPoint[] = [];
+  let points: TrendPointPlus[] = [];
   if (rows.length) {
     const byPeriod = new Map(rows.map((r) => [r.period, r]));
     points = fillPeriods(rows[0]!.period, rows[rows.length - 1]!.period, granularity).map(
@@ -140,6 +242,7 @@ export async function getSpendingTrend(
         return {
           period,
           valueEur: r?.value_eur ?? 0,
+          euValueEur: r?.eu_value_eur ?? 0,
           contracts: r?.contracts ?? 0,
           partial: period === partialPeriod,
         };
@@ -148,22 +251,24 @@ export async function getSpendingTrend(
   }
 
   // Per-year summary with year-over-year change (fold months into years for month granularity).
-  const yearMap = new Map<string, { valueEur: number; contracts: number }>();
+  const yearMap = new Map<string, { valueEur: number; euValueEur: number; contracts: number }>();
   for (const pt of points) {
     const y = pt.period.slice(0, 4);
-    const acc = yearMap.get(y) ?? { valueEur: 0, contracts: 0 };
+    const acc = yearMap.get(y) ?? { valueEur: 0, euValueEur: 0, contracts: 0 };
     acc.valueEur += pt.valueEur;
+    acc.euValueEur += pt.euValueEur;
     acc.contracts += pt.contracts;
     yearMap.set(y, acc);
   }
   const sortedYears = [...yearMap.keys()].sort();
-  const years: TrendYear[] = sortedYears.map((year, i) => {
+  const years: TrendYearPlus[] = sortedYears.map((year, i) => {
     const cur = yearMap.get(year)!;
     const prev = i > 0 ? yearMap.get(sortedYears[i - 1]!)! : null;
     const partial = year === partialYear;
     return {
       year,
       valueEur: cur.valueEur,
+      euValueEur: cur.euValueEur,
       contracts: cur.contracts,
       // No YoY for the partial final year: a partial year against a full one reads as a false collapse.
       yoyPct:
@@ -174,6 +279,17 @@ export async function getSpendingTrend(
     };
   });
 
+  const quarters: TrendQuarterValue[] = quarterRows.results.map((r) => ({
+    year: r.year,
+    quarter: Number(r.quarter),
+    valueEur: r.value_eur,
+  }));
+  const sectorYears: TrendSectorYearValue[] = sectorYearRows.results.map((r) => ({
+    division: r.division,
+    year: r.year,
+    valueEur: r.value_eur,
+  }));
+
   const dated = coverageRow?.dated ?? 0;
   const total = coverageRow?.total ?? 0;
   return {
@@ -181,6 +297,9 @@ export async function getSpendingTrend(
     points,
     years,
     sectors,
+    partialYear,
+    quarters,
+    sectorYears,
     totalValueEur: points.reduce((sum, pt) => sum + pt.valueEur, 0),
     coverage: { dated, total, pct: total > 0 ? dated / total : 0 },
     scope: { sector: p.sector ?? null, funding: p.funding ?? 'all', granularity },
