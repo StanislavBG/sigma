@@ -1,8 +1,8 @@
-import { Form, useNavigation, useSearchParams, useSubmit } from 'react-router';
-import type { TrendYear } from '@sigma/api-contract';
-import { count, money, pct, signedPct } from '@sigma/shared';
+import { Form, Link, useNavigation, useSearchParams, useSubmit } from 'react-router';
+import type { ContractListItem, TrendYear } from '@sigma/api-contract';
+import { count, date, money, pct, signedPct } from '@sigma/shared';
 import { CPV_SECTORS } from '@sigma/config';
-import { getSpendingTrend } from '@sigma/db';
+import { getSpendingTrend, listContracts } from '@sigma/db';
 import type { Route } from './+types/trends';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
@@ -33,16 +33,24 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const db = context.cloudflare.env.DB;
   // A bogus ?sector would silently empty the chart; flag it and ignore it instead.
   const unknownSector = Boolean(sector) && !CPV_SECTORS.some((s) => s.code === sector);
-  const data = await getSpendingTrend(db, {
-    sector: unknownSector ? null : sector,
-    funding: (sp.get('funding') as 'eu' | 'national' | null) || 'all',
-    granularity,
-  });
-  return { data, unknownSector };
+  const validSector = unknownSector ? null : sector;
+  const funding = (sp.get('funding') as 'eu' | 'national' | null) || 'all';
+  const [data, latest] = await Promise.all([
+    getSpendingTrend(db, { sector: validSector, funding, granularity }),
+    // The newest contracts behind the curve — the "what just landed" tail of the time series. Respects
+    // the page's sector/funding filters so it stays coherent with the chart above.
+    listContracts(db, {
+      sort: 'date-desc',
+      sectors: validSector ? [validSector] : [],
+      eu: funding === 'all' ? null : funding,
+      pageSize: 12,
+    }),
+  ]);
+  return { data, unknownSector, latest: latest.items };
 }
 
 export default function Trends({ loaderData }: Route.ComponentProps) {
-  const { data, unknownSector } = loaderData;
+  const { data, unknownSector, latest } = loaderData;
   const [sp] = useSearchParams();
   const submit = useSubmit();
   const navigating = useNavigation().state !== 'idle';
@@ -69,6 +77,38 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
       cell: (r) => (r.yoyPct == null ? '' : signedPct(r.yoyPct)),
     },
   ];
+
+  const latestColumns: Column<ContractListItem>[] = [
+    {
+      key: 'signedAt',
+      header: 'Сключен',
+      isTitle: true,
+      cell: (r) => <Link to={`/contracts/${r.id}`}>{r.signedAt ? date(r.signedAt) : '—'}</Link>,
+    },
+    {
+      key: 'parties',
+      header: 'Възложител → Изпълнител',
+      cell: (r) => (
+        <>
+          <Link to={`/authorities/${r.authoritySlug}`}>{r.authorityName}</Link>
+          {' → '}
+          <Link to={`/companies/${r.bidderSlug}`}>{r.bidderDisplayName}</Link>
+        </>
+      ),
+    },
+    {
+      key: 'value',
+      header: 'Стойност',
+      align: 'money',
+      cell: (r) => (r.valueEur != null ? money(r.valueEur) : 'непотвърдена'),
+    },
+  ];
+
+  // Carry the active sector/funding filters onto the RSS feed so "subscribe" matches what's shown.
+  const rssParams = new URLSearchParams();
+  if (sp.get('sector') && !unknownSector) rssParams.set('sector', sp.get('sector')!);
+  if (sp.get('funding')) rssParams.set('funding', sp.get('funding')!);
+  const rssHref = `/trends.rss${rssParams.toString() ? `?${rssParams}` : ''}`;
 
   return (
     <>
@@ -151,6 +191,28 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
             getKey={(r) => r.year}
             caption="Разходи по години"
           />
+        </Section>
+
+        <Section
+          id="latest"
+          title="Най-нови договори"
+          hint={
+            <>
+              Последно сключените договори за избрания срез — върхът на кривата. Следете ги без
+              профил през <a href={rssHref}>RSS емисията</a>.
+            </>
+          }
+        >
+          {latest.length > 0 ? (
+            <DataTable
+              columns={latestColumns}
+              rows={latest}
+              getKey={(r) => r.id}
+              caption="Най-нови договори"
+            />
+          ) : (
+            <p className="muted">Няма договори за избрания срез.</p>
+          )}
         </Section>
 
         <Callout title="За покритието на данните">
