@@ -1,11 +1,18 @@
 import { Link } from 'react-router';
 import { count, money, pct } from '@sigma/shared';
 import type { AuthorityDetail, CompanyDetail } from '@sigma/api-contract';
-import { authorityIdFromSlug, bidderIdFromSlug, getAuthority, getCompany } from '@sigma/db';
+import {
+  authorityIdFromSlug,
+  authoritySlug,
+  bidderIdFromSlug,
+  companySlug,
+  getAuthority,
+  getCompany,
+} from '@sigma/db';
 import type { Route } from './+types/compare';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
-import { Chip, Flag, Section } from '../components/ui';
+import { Callout, Chip, Flag, Section } from '../components/ui';
 import { publicCache } from '../lib/cache';
 import { withDbRetry } from '../lib/retry';
 import { seoMeta } from '../lib/meta';
@@ -63,9 +70,34 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     return id ? getCompany(db, id) : null;
   }
 
+  // Landing on bare /compare with an empty picker doesn't show what the tool does. Bootstrap a real
+  // example — the two biggest entities by value — so the page renders a meaningful comparison on first
+  // load; the picker stays below to swap in your own. Real rows only (never a fabricated pair).
+  async function defaultExamplePair(): Promise<{ a: string; b: string } | null> {
+    const sql =
+      kind === 'company'
+        ? 'SELECT bidder_id AS id FROM company_totals ORDER BY won_eur DESC, bidder_id LIMIT 2'
+        : 'SELECT authority_id AS id FROM authority_totals ORDER BY spent_eur DESC, authority_id LIMIT 2';
+    const { results } = await db.prepare(sql).all<{ id: string }>();
+    if (results.length < 2) return null;
+    const toSlug = kind === 'company' ? companySlug : authoritySlug;
+    return { a: toSlug(results[0].id), b: toSlug(results[1].id) };
+  }
+
   return withDbRetry(async () => {
-    const [a, b] = await Promise.all([resolve(aSlug), resolve(bSlug)]);
-    return { kind, aSlug, bSlug, a, b };
+    let aS = aSlug;
+    let bS = bSlug;
+    let isExample = false;
+    if (!aSlug && !bSlug) {
+      const ex = await defaultExamplePair();
+      if (ex) {
+        aS = ex.a;
+        bS = ex.b;
+        isExample = true;
+      }
+    }
+    const [a, b] = await Promise.all([resolve(aS), resolve(bS)]);
+    return { kind, aSlug: aS, bSlug: bS, a, b, isExample };
   });
 }
 
@@ -207,7 +239,7 @@ function Picker({
 }
 
 export default function Compare({ loaderData }: Route.ComponentProps) {
-  const { kind, aSlug, bSlug, a, b } = loaderData;
+  const { kind, aSlug, bSlug, a, b, isExample } = loaderData;
   const ea = toEntity(kind, a);
   const eb = toEntity(kind, b);
   const labels = KIND_LABEL[kind];
@@ -228,6 +260,15 @@ export default function Compare({ loaderData }: Route.ComponentProps) {
 
         {ea && eb ? (
           <>
+            {isExample && (
+              <Callout title="Примерно сравнение">
+                <p style={{ margin: 0 }}>
+                  Показваме двете най-големи {labels.many} по стойност, за да видите как работи
+                  изгледът. Изберете свои {labels.many} по-долу ↓ — или сменете на{' '}
+                  <Link to="/compare?kind=company">компании</Link>.
+                </p>
+              </Callout>
+            )}
             <Section
               id="scope"
               title="Сравнени субекти"
@@ -298,6 +339,10 @@ export default function Compare({ loaderData }: Route.ComponentProps) {
                 </div>
               </div>
             </Section>
+
+            {isExample && (
+              <Picker kind={kind} aSlug={null} bSlug={null} aMissing={false} bMissing={false} />
+            )}
           </>
         ) : (
           <Picker
