@@ -1,5 +1,5 @@
-import { Link } from 'react-router';
-import { count, money, pct } from '@sigma/shared';
+import { Form, Link, useSubmit } from 'react-router';
+import { count, money, moneyBare, pct } from '@sigma/shared';
 import type { AuthorityDetail, CompanyDetail } from '@sigma/api-contract';
 import {
   authorityIdFromSlug,
@@ -8,6 +8,10 @@ import {
   companySlug,
   getAuthority,
   getCompany,
+  getCompareLeaderboard,
+  normalizeLeaderboardMetric,
+  type CompareLeaderboard,
+  type LeaderboardMetric,
 } from '@sigma/db';
 import type { Route } from './+types/compare';
 import { Breadcrumbs } from '../components/Breadcrumbs';
@@ -32,6 +36,25 @@ const KIND_LABEL: Record<CompareKind, { one: string; many: string }> = {
   authority: { one: 'институция', many: 'институции' },
   company: { one: 'компания', many: 'компании' },
 };
+
+// The leaderboard dimensions. `reach` and `eu` labels flip by kind (suppliers↔clients).
+const METRIC_LABEL: Record<LeaderboardMetric, { label: string; hint: (k: CompareKind) => string }> =
+  {
+    total: { label: 'Общо €', hint: (k) => (k === 'authority' ? 'похарчено' : 'спечелено') },
+    avg: { label: 'Среден договор', hint: () => 'средна стойност на договор' },
+    reach: {
+      label: 'Контрагенти',
+      hint: (k) => (k === 'authority' ? 'различни изпълнители' : 'различни възложители'),
+    },
+    eu: { label: 'Дял ЕС', hint: () => 'дял от стойността с финансиране от ЕС' },
+  };
+const METRIC_ORDER: LeaderboardMetric[] = ['total', 'avg', 'reach', 'eu'];
+
+function fmtMetric(metric: LeaderboardMetric, v: number): string {
+  if (metric === 'eu') return pct(v);
+  if (metric === 'reach') return count(v);
+  return money(v);
+}
 
 function parseKind(raw: string | null): CompareKind {
   return raw === 'company' ? 'company' : 'authority';
@@ -84,6 +107,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     return { a: toSlug(results[0].id), b: toSlug(results[1].id) };
   }
 
+  const metric = normalizeLeaderboardMetric(sp.get('metric'));
+  const idOf = (slug: string | null): string | null =>
+    !slug ? null : kind === 'authority' ? authorityIdFromSlug(slug) : bidderIdFromSlug(slug);
+
   return withDbRetry(async () => {
     let aS = aSlug;
     let bS = bSlug;
@@ -96,8 +123,13 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         isExample = true;
       }
     }
-    const [a, b] = await Promise.all([resolve(aS), resolve(bS)]);
-    return { kind, aSlug: aS, bSlug: bS, a, b, isExample };
+    const highlightIds = [idOf(aS), idOf(bS)].filter((x): x is string => x != null);
+    const [a, b, leaderboard] = await Promise.all([
+      resolve(aS),
+      resolve(bS),
+      getCompareLeaderboard(db, { kind, metric, highlightIds }),
+    ]);
+    return { kind, aSlug: aS, bSlug: bS, a, b, isExample, metric, leaderboard };
   });
 }
 
@@ -238,8 +270,151 @@ function Picker({
   );
 }
 
+function Leaderboard({
+  kind,
+  metric,
+  board,
+  aSlug,
+  bSlug,
+}: {
+  kind: CompareKind;
+  metric: LeaderboardMetric;
+  board: CompareLeaderboard;
+  aSlug: string | null;
+  bSlug: string | null;
+}) {
+  const submit = useSubmit();
+  const labels = KIND_LABEL[kind];
+  const href = (slug: string) =>
+    kind === 'authority' ? `/authorities/${slug}` : `/companies/${slug}`;
+  const max = Math.max(1, board.maxValue);
+  const bar = (value: number, highlighted: boolean) => (
+    <span
+      aria-hidden="true"
+      style={{
+        display: 'inline-block',
+        width: `${Math.max(2, Math.round((value / max) * 72))}px`,
+        height: '8px',
+        borderRadius: '2px',
+        background: highlighted ? 'var(--accent)' : 'var(--ink-mid)',
+      }}
+    />
+  );
+
+  return (
+    <Section
+      id="leaderboard"
+      title={
+        <>
+          Класация · <Chip>{METRIC_LABEL[metric].label}</Chip>
+        </>
+      }
+      hint={`${count(board.qualifying)} ${labels.many}, подредени по ${METRIC_LABEL[metric].hint(
+        kind,
+      )}. Избраните за сравнение са откроени. Средните стойности броят само същности с поне 5 договора.`}
+    >
+      <Form
+        method="get"
+        className="flow-controls"
+        role="group"
+        aria-label="Подреждане на класацията"
+        onChange={(e) => submit(e.currentTarget)}
+      >
+        {aSlug && <input type="hidden" name="a" value={aSlug} />}
+        {bSlug && <input type="hidden" name="b" value={bSlug} />}
+        <label>
+          Вид:
+          <select name="kind" defaultValue={kind}>
+            <option value="authority">Институции</option>
+            <option value="company">Компании</option>
+          </select>
+        </label>
+        <label>
+          Подреди по:
+          <select name="metric" defaultValue={metric}>
+            {METRIC_ORDER.map((m) => (
+              <option key={m} value={m}>
+                {METRIC_LABEL[m].label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </Form>
+
+      {board.pinned.length > 0 && (
+        <p className="muted" style={{ marginTop: 0 }}>
+          Къде стоят избраните:{' '}
+          {board.pinned.map((p, i) => (
+            <span key={p.slug}>
+              {i > 0 && ' · '}
+              <Link to={href(p.slug)}>{p.name}</Link>{' '}
+              {p.rank > 0 ? (
+                <>
+                  <strong>#{count(p.rank)}</strong> от {count(board.qualifying)}
+                  {board.qualifying > 0 &&
+                    ` (${pct(1 - (p.rank - 1) / board.qualifying)} перцентил)`}
+                </>
+              ) : (
+                <em>не се класира (под 5 договора)</em>
+              )}
+            </span>
+          ))}
+        </p>
+      )}
+
+      <div className="table-wrap">
+        <table>
+          <caption className="sr-only">Класация по {METRIC_LABEL[metric].label}</caption>
+          <thead>
+            <tr>
+              <th scope="col" className="num">
+                #
+              </th>
+              <th scope="col">{labels.one}</th>
+              <th scope="col" className="num">
+                {METRIC_LABEL[metric].label}
+              </th>
+              <th scope="col" className="num">
+                Общо €
+              </th>
+              <th scope="col" className="num">
+                Договори
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {board.rows.map((r) => (
+              <tr
+                key={r.slug}
+                style={
+                  r.highlighted
+                    ? { background: 'color-mix(in oklch, var(--accent) 12%, transparent)' }
+                    : undefined
+                }
+              >
+                <td className="num">{count(r.rank)}</td>
+                <td>
+                  <Link to={href(r.slug)}>{r.name}</Link>
+                </td>
+                <td className="num">
+                  <span style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
+                    {bar(r.metricValue, r.highlighted)}
+                    <span>{fmtMetric(metric, r.metricValue)}</span>
+                  </span>
+                </td>
+                <td className="num">{moneyBare(r.totalEur)} €</td>
+                <td className="num">{count(r.contracts)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
 export default function Compare({ loaderData }: Route.ComponentProps) {
-  const { kind, aSlug, bSlug, a, b, isExample } = loaderData;
+  const { kind, aSlug, bSlug, a, b, isExample, metric, leaderboard } = loaderData;
   const ea = toEntity(kind, a);
   const eb = toEntity(kind, b);
   const labels = KIND_LABEL[kind];
@@ -255,8 +430,10 @@ export default function Compare({ loaderData }: Route.ComponentProps) {
             </>
           }
           title="Едно до друго"
-          lede={`„По-зле ли е моята община от съседната?" Изберете две ${labels.many} и ги сравнете по общите показатели. Всяко число идва от реалните договори зад профила — без сравнима стойност колоната остава „—".`}
+          lede={`„По-зле ли е моята община от съседната?" Класирай всички ${labels.many} по една мярка, виж къде стоят избраните, после ги разгледай едно до друго. Всяко число идва от реалните договори.`}
         />
+
+        <Leaderboard kind={kind} metric={metric} board={leaderboard} aSlug={aSlug} bSlug={bSlug} />
 
         {ea && eb ? (
           <>

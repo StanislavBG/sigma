@@ -12,6 +12,7 @@ export const CACHE_QUERY_PARAMS = new Set([
   'funding',
   'g',
   'kind',
+  'metric', // /compare leaderboard dimension
   'p',
   'procedure',
   'q',
