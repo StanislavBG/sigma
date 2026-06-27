@@ -2536,6 +2536,24 @@ details.row .body .signal .why {
   flex: 1 1 460px;
   min-width: 0;
 }
+/* Full-screen: the widget fills the viewport on a paper background; the graph grows to use the height,
+   the card sits beside it, and the controls/legend stay usable. */
+.net-graph:fullscreen {
+  background: var(--paper);
+  padding: 24px;
+  overflow: auto;
+}
+.net-graph:fullscreen .net-explore {
+  min-height: calc(100vh - 160px);
+}
+.net-graph:fullscreen .net-canvas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.net-graph:fullscreen .network-svg {
+  max-height: calc(100vh - 180px);
+}
 .net-card {
   flex: 0 0 240px;
   align-self: stretch;

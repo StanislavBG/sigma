@@ -50,6 +50,9 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
   // Hover-to-explore: which node the pointer is over (drives the side Information Card + the focus/dim
   // emphasis). Cleared on mouse-leave; a stale id from a previous graph self-corrects (see `hovering`).
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // Full-screen toggle for the whole widget (controls + graph + card stay usable inside it).
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
   // True between a node click and the adoption of its result. Lets Reset cancel an in-flight load so a
   // late-arriving fetch can't snap the graph back, and stops us re-adopting stale fetcher.data.
   const pending = useRef(false);
@@ -83,6 +86,13 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
   useEffect(() => {
     if (browsed) resetRef.current?.focus();
   }, [browsed]);
+
+  // Keep the button label/state in sync with the actual fullscreen status (covers Esc / browser exit).
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === wrapRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
 
   const current = browsed ?? data;
   const loading = fetcher.state === 'loading';
@@ -152,9 +162,15 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
     setFailed(false);
     setBrowsed(null);
   };
+  // Expand the whole widget to fill the screen (and back). The Fullscreen API needs a user gesture,
+  // which the button click provides; the `fullscreenchange` effect above keeps `isFullscreen` honest.
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else wrapRef.current?.requestFullscreen?.();
+  };
 
   return (
-    <div className="net-graph" aria-busy={loading || undefined}>
+    <div className="net-graph" aria-busy={loading || undefined} ref={wrapRef}>
       <div className="net-controls">
         {/* Pure-CSS toggle: when unchecked, `.net-graph:has(input:not(:checked)) .edge-label` hides the
             midpoint value labels — no client JS needed for this part. Default on. */}
@@ -208,6 +224,14 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
               </button>
               <button type="button" aria-label="Увеличи" onClick={zoomIn}>
                 +
+              </button>
+              <button
+                type="button"
+                aria-label={isFullscreen ? 'Изход от цял екран' : 'Цял екран'}
+                aria-pressed={isFullscreen}
+                onClick={toggleFullscreen}
+              >
+                {isFullscreen ? '⤡' : '⤢'}
               </button>
             </div>
           )}
