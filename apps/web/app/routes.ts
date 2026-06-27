@@ -20,6 +20,8 @@ export default [
   route('contracts.csv', 'routes/contracts.csv.tsx'),
   route('contracts/:id.json', 'routes/contract.json.tsx'),
   route('contracts/:id', 'routes/contract.tsx'),
+  route('latest', 'routes/latest.tsx'),
+  route('latest.rss', 'routes/latest.rss.tsx'),
   route('methodology', 'routes/methodology.tsx'),
   route('accessibility', 'routes/accessibility.tsx'),
   route('privacy', 'routes/privacy.tsx'),
