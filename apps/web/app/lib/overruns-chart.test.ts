@@ -33,9 +33,9 @@ describe('overrunBarGeometry', () => {
 
 describe('formatGrowthFactor', () => {
   it('renders a pct ratio as a Bulgarian-formatted multiple of the signed value', () => {
-    expect(formatGrowthFactor(2.1)).toBe('3,1×');
-    expect(formatGrowthFactor(1)).toBe('2×');
-    expect(formatGrowthFactor(0)).toBe('1×');
+    expect(formatGrowthFactor(2.1)).toBe('3,1× (+210%)');
+    expect(formatGrowthFactor(1)).toBe('2× (+100%)');
+    expect(formatGrowthFactor(0)).toBe('1× (0%)');
   });
 
   it('returns an em-dash for a non-finite input', () => {

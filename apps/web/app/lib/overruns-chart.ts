@@ -9,6 +9,8 @@
 //
 // Both mirror the Claude-Design mock's proportions but read their extents from the real rows.
 
+import { signedPct } from '@sigma/shared';
+
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 export interface OverrunBarGeometry {
@@ -38,12 +40,15 @@ export function overrunBarGeometry(
   return { signPct, incPct: round1(100 - signPct), nowScalePct: round1(scale * 100) };
 }
 
-/** Median-growth KPI: a pct ratio (0.5 = +50%) shown as a multiple of the signed value, e.g. „3,1×". */
+/**
+ * Median-growth KPI: a pct ratio (0.5 = +50%) shown as a multiple of the signed value with the
+ * percentage spelled out so „1,4×" cannot be misread as „40% of", e.g. „1,4× (+40%)".
+ */
 export function formatGrowthFactor(pctRatio: number): string {
   if (!Number.isFinite(pctRatio)) return '—';
   const factor = Math.max(0, 1 + pctRatio);
   const s = (Math.round(factor * 10) / 10).toFixed(1).replace(/\.0$/, '').replace('.', ',');
-  return `${s}×`;
+  return `${s}× (${signedPct(pctRatio)})`;
 }
 
 export interface ScatterDatum {

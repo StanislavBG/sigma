@@ -4805,8 +4805,25 @@ tbody td,
 }
 .ov-row-rank {
   font: 600 22px/1 var(--font-serif);
-  color: var(--accent);
+  color: var(--ink-mid);
   text-align: center;
+}
+.ov-row[aria-pressed='true'] .ov-row-rank {
+  color: var(--accent);
+}
+/* per-row growth: neutral by default so the accent isn't diluted; reserved for the largest grower
+   and the selected row (see Fix: accent-red overload). */
+.ov-row-pct {
+  color: var(--ink-mid);
+}
+.ov-row-pct.is-top {
+  color: var(--accent);
+}
+.ov-row[aria-pressed='true'] .ov-row-pct {
+  color: var(--accent);
+}
+.ov-arrow {
+  color: var(--ink-mid);
 }
 .ov-row-body {
   min-width: 0;
@@ -4901,6 +4918,18 @@ tbody td,
 .ov-scatter-svg {
   display: block;
   overflow: visible;
+}
+/* progressive-enhancement hover cue so the clickable bubbles feel interactive (mouse only — the
+   keyboard path is the leaderboard buttons). */
+.ov-scatter-dot {
+  transition:
+    r 0.12s ease,
+    fill-opacity 0.12s ease,
+    stroke-width 0.12s ease;
+}
+.ov-scatter-dot:hover {
+  fill-opacity: 0.95 !important;
+  stroke-width: 1.75;
 }
 
 /* inspector */
@@ -5132,6 +5161,11 @@ tbody td,
 .ov-sector-dot.other {
   background: var(--ink-soft);
 }
+/* horizontal scroll wrapper for the wide (6-column) tables so they don't crush on narrow screens */
+.ov-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .ov-sector-table {
   width: 100%;
   border-collapse: collapse;
@@ -5172,6 +5206,9 @@ tbody td,
 .ov-sector-growth {
   text-align: right;
   font: 600 11px/1 var(--font-mono);
+  color: var(--ink-mid);
+}
+.ov-sector-growth.is-top {
   color: var(--accent);
 }
 .ov-sector-risk {
@@ -5230,6 +5267,9 @@ tbody td,
   font-weight: 600 !important;
 }
 .ov-auth-growth {
+  color: var(--ink-mid) !important;
+}
+.ov-auth-growth.is-top {
   color: var(--accent) !important;
 }
 .ov-auth-table td.c-share {

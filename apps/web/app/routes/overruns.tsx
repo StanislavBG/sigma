@@ -295,6 +295,7 @@ function OverrunScatter({
               <circle cx={p.x} cy={p.y} r={p.r + 4} fill="none" stroke={ACCENT} strokeWidth={1.5} />
             )}
             <circle
+              className="ov-scatter-dot"
               cx={p.x}
               cy={p.y}
               r={isSel ? p.r * 1.18 : p.r}
@@ -420,7 +421,9 @@ function OverrunsDashboard({
                         <span className="clamp1 ov-row-subject">{r.subject}</span>
                         <span className="ov-row-value">
                           {money(r.currentEur)}{' '}
-                          <span className="ov-accent">{signedPct(r.pct)}</span>
+                          <span className={i === 0 ? 'ov-row-pct is-top' : 'ov-row-pct'}>
+                            {signedPct(r.pct)}
+                          </span>
                         </span>
                       </span>
                       <OverrunBar
@@ -429,7 +432,7 @@ function OverrunsDashboard({
                         scaleMaxEur={scaleMax}
                       />
                       <span className="clamp1 ov-row-meta">
-                        {r.authorityName} <span className="ov-accent">→</span> {r.bidderName} · от{' '}
+                        {r.authorityName} <span className="ov-arrow">→</span> {r.bidderName} · от{' '}
                         {money(r.signingEur)} · {count(r.annexCount)} анекса
                       </span>
                     </span>
@@ -450,7 +453,7 @@ function OverrunsDashboard({
               Облак на <em>раздуването</em>
             </>
           }
-          note="хоризонтално % растеж (лог) · вертикално € раздуване · размер = брой анекси"
+          note="хоризонтално % растеж (лог) · вертикално € раздуване · размер = брой анекси · кликни точка за детайли"
         />
         <div className="ov-figure-grid">
           <div className="ov-panel ov-scatter-panel" ref={scatterFs.ref}>
@@ -529,6 +532,15 @@ const BUCKET_LABEL: Record<OverrunSectorRow['bucket'], string> = {
 };
 
 function SectorSection({ rows }: { rows: OverrunSectorRow[] }) {
+  // Reserve the accent for the single largest grower; the rest stay neutral so it actually stands out.
+  const topGrowthCode = rows.reduce<{ code: string; growth: number }>(
+    (best, s) => (s.growth > best.growth ? { code: s.code, growth: s.growth } : best),
+    { code: '', growth: -Infinity },
+  ).code;
+  const hasOther = rows.some((s) => s.bucket === 'other');
+  const legendBuckets = (
+    hasOther ? ['works', 'goods', 'services', 'other'] : ['works', 'goods', 'services']
+  ) as OverrunSectorRow['bucket'][];
   return (
     <section className="ov-section" aria-labelledby="ov-sector-h">
       <SectionHead
@@ -542,7 +554,7 @@ function SectorSection({ rows }: { rows: OverrunSectorRow[] }) {
       />
       <div className="ov-panel ov-sector-list-panel">
         <ul className="ov-bucket-legend" aria-label="Легенда на секторите">
-          {(['works', 'goods', 'services'] as const).map((b) => (
+          {legendBuckets.map((b) => (
             <li key={b} className="ov-bucket-legend-item">
               <span aria-hidden="true" className={`ov-sector-dot ${b}`} />
               {BUCKET_LABEL[b]}
@@ -574,7 +586,15 @@ function SectorSection({ rows }: { rows: OverrunSectorRow[] }) {
                   />
                   <span className="clamp1">{s.label}</span>
                 </td>
-                <td className="ov-sector-growth">{signedPct(s.growth)}</td>
+                <td
+                  className={
+                    s.code === topGrowthCode && rows.length > 1
+                      ? 'ov-sector-growth is-top'
+                      : 'ov-sector-growth'
+                  }
+                >
+                  {signedPct(s.growth)}
+                </td>
                 <td className="ov-sector-risk">{moneyBare(s.riskEur)}</td>
               </tr>
             ))}
@@ -600,38 +620,42 @@ function AuthoritySection({ rows }: { rows: OverrunAuthorityRow[] }) {
         note="подредени по обща сума на раздуването"
       />
       <div className="ov-panel ov-auth-panel">
-        <table className="ov-auth-table">
-          <caption className="sr-only">
-            Възложители, подредени по обща сума на раздуването: брой договори, дял от най-големия
-            възложител и агрегиран растеж (сума раздуване / сума при сключване).
-          </caption>
-          <thead>
-            <tr>
-              <th className="c-rank">№</th>
-              <th className="c-name">Възложител</th>
-              <th className="c-num">Раздуване</th>
-              <th className="c-num">Договори</th>
-              <th className="c-share">Дял от макс</th>
-              <th className="c-num">Растеж</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.authoritySlug}>
-                <td className="c-rank">{i + 1}</td>
-                <td className="c-name">
-                  <Link to={`/authorities/${r.authoritySlug}`}>{r.authorityName}</Link>
-                </td>
-                <td className="c-num ov-auth-total">{moneyBare(r.totalOverrunEur)}</td>
-                <td className="c-num">{count(r.count)}</td>
-                <td className="c-share">
-                  <ShareBar ratio={r.totalOverrunEur / maxTotal} />
-                </td>
-                <td className="c-num ov-auth-growth">{signedPct(r.growth)}</td>
+        <div className="ov-table-scroll">
+          <table className="ov-auth-table">
+            <caption className="sr-only">
+              Възложители, подредени по обща сума на раздуването: брой договори, дял от най-големия
+              възложител и агрегиран растеж (сума раздуване / сума при сключване).
+            </caption>
+            <thead>
+              <tr>
+                <th className="c-rank">№</th>
+                <th className="c-name">Възложител</th>
+                <th className="c-num">Раздуване</th>
+                <th className="c-num">Договори</th>
+                <th className="c-share">Дял от макс</th>
+                <th className="c-num">Растеж</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.authoritySlug}>
+                  <td className="c-rank">{i + 1}</td>
+                  <td className="c-name">
+                    <Link to={`/authorities/${r.authoritySlug}`}>{r.authorityName}</Link>
+                  </td>
+                  <td className="c-num ov-auth-total">{moneyBare(r.totalOverrunEur)}</td>
+                  <td className="c-num">{count(r.count)}</td>
+                  <td className="c-share">
+                    <ShareBar ratio={r.totalOverrunEur / maxTotal} />
+                  </td>
+                  <td className={i === 0 ? 'c-num ov-auth-growth is-top' : 'c-num ov-auth-growth'}>
+                    {signedPct(r.growth)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <p className="ov-auth-foot">
           — агрегирано от {count(rows.length)} възложителя · данни АОП —
         </p>
@@ -819,7 +843,9 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
         <p className="small muted ov-methodology">
           Раздуването е разликата между сегашната стойност и стойността при сключване, само за
           договори с поне един анекс и потвърдени стойности. Растежът на сектор/институция е
-          €-претеглен (сума раздуване / сума при сключване), не средно на процентите. Виж{' '}
+          €-претеглен (сума раздуване / сума при сключване), не средно на процентите. Нарастването
+          не означава непременно нередност — увеличения по анекси може да са напълно законни
+          (индексация на цени, разширен обхват, непредвидени дейности). Виж{' '}
           <Link to="/methodology#glossary">методологията</Link> за дефинициите.
         </p>
       </main>
