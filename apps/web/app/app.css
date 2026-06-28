@@ -4426,11 +4426,27 @@ tbody td,
 }
 
 /* dashboard frame */
+/* single-line and two-line ellipsis truncation (ported from the design's .clamp1/.clamp2 — they were
+   referenced across overruns/trends but never defined, so long subjects wrapped and overflowed). */
+.clamp1 {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.clamp2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Stacked layout: full-width bar leaderboard on top, then the bubble cloud directly under it (both get
+   the full page width — bars no longer side-scroll, the cloud is far more legible), then the inspector. */
 .overruns-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 14px;
-  align-items: stretch;
 }
 .ov-right {
   display: flex;
@@ -4462,8 +4478,9 @@ tbody td,
   list-style: none;
   margin: 0;
   padding: 0 8px 8px;
-  overflow: auto;
-  max-height: 520px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 560px;
 }
 .ov-row {
   display: grid;
@@ -4572,7 +4589,7 @@ tbody td,
 }
 .ov-scatter-body {
   flex: 1;
-  min-height: 200px;
+  min-height: 340px;
   margin-top: 6px;
 }
 .ov-scatter-svg {
