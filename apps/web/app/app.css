@@ -4664,7 +4664,89 @@ tbody td,
   line-height: 1.35;
   color: var(--ink);
 }
-.ov-insp-foot {
+/* inspector head: kicker + status badge on one row */
+.ov-insp-head-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ov-status-badge {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font: 500 8.5px/1.4 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.ov-status-badge.active {
+  border-color: color-mix(in oklch, var(--accent) 45%, var(--rule));
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
+}
+.ov-status-badge.closed {
+  color: var(--ink-soft);
+  background: var(--paper-warm);
+}
+
+/* annex history — REAL amendment rows for the selected contract */
+.ov-annex-wrap {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+.ov-annex-heading {
+  margin-bottom: 8px;
+}
+.ov-annex-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ov-annex-row {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.ov-annex-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.ov-annex-seq {
+  flex: none;
+  font: 500 9px/1.3 var(--font-mono);
+  letter-spacing: 0.05em;
+  color: var(--ink-mid);
+}
+.ov-annex-date {
+  flex: none;
+  font: 400 9px/1.3 var(--font-mono);
+  color: var(--ink-soft);
+}
+.ov-annex-delta {
+  margin-left: auto;
+  flex: none;
+  font: 600 11px/1.3 var(--font-mono);
+  color: var(--accent);
+}
+.ov-annex-reason {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--ink-mid);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ov-annex-empty {
+  margin: 0;
+  font: 400 10px/1.5 var(--font-mono);
+  color: var(--ink-soft);
+}
+.ov-insp-source {
   margin-top: 12px;
   font: 400 9.5px/1.5 var(--font-mono);
   color: var(--ink-soft);

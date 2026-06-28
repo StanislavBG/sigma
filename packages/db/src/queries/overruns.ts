@@ -47,6 +47,28 @@ export interface OverrunRow {
   /** Operational programme name when present (contract-level, falling back to tender-level). */
   euProgramme: string | null;
   signedAt: string | null;
+  /** Тender „Очакван край" (end_date) — the contract term date; drives the „Срок" row + status badge. */
+  endDate: string | null;
+  /** Contract „Срок за изпълнение" in days (contracts.duration_days); a term fallback when no end_date. */
+  durationDays: number | null;
+}
+
+// One real amendment of an overrun contract — the rows behind „История на анексите · N". Sourced from
+// the `amendments` history table (value_before/after/delta + published_at + description), joined to the
+// contract via (tender.source_id = amendments.unp, contracts.contract_number = amendments.contract_number).
+// Native amendment values are normalised to EUR here (peg for BGN, identity for EUR) so the inspector's
+// +Δ reads in the same unit as the rest of the page; a foreign currency without an fx rate yields null
+// (omitted honestly rather than shown in the wrong unit).
+export interface OverrunAnnex {
+  contractId: string;
+  /** Amendment publication date (ISO, may be NULL when the source omits it). */
+  date: string | null;
+  /** Reason / circumstances of the amendment (`description`); NULL when the source omits it. */
+  reason: string | null;
+  valueBeforeEur: number | null;
+  valueAfterEur: number | null;
+  /** Post-minus-pre value change in EUR; NULL when the currency can't be normalised. */
+  deltaEur: number | null;
 }
 
 export interface OverrunsResult {
@@ -149,6 +171,20 @@ interface RawRow {
   eu_funded: number | null;
   eu_programme: string | null;
   signed_at: string | null;
+  end_date: string | null;
+  duration_days: number | null;
+}
+
+const PEG = 1.95583;
+
+// Native amendment value → EUR. Peg for BGN, identity for EUR; any other currency has no fx rate on the
+// `amendments` row, so it returns null (the inspector then omits the figure rather than mis-stating it).
+function annexEur(value: number | null, currency: string | null): number | null {
+  if (value == null) return null;
+  const c = (currency ?? 'BGN').toUpperCase();
+  if (c === 'EUR') return value;
+  if (c === 'BGN') return value / PEG;
+  return null;
 }
 
 function clampLimit(limit: number | undefined, fallback: number, max: number): number {
@@ -174,7 +210,9 @@ function leaderboardSql(by: 'absolute' | 'percent'): string {
                 t.procedure_type AS procedure_type,
                 c.eu_funded AS eu_funded,
                 COALESCE(c.eu_programme, t.eu_programme) AS eu_programme,
-                c.signed_at AS signed_at
+                c.signed_at AS signed_at,
+                t.end_date AS end_date,
+                c.duration_days AS duration_days
          FROM contracts c
          JOIN tenders t ON t.id = c.tender_id
          JOIN authorities a ON a.id = t.authority_id
@@ -215,8 +253,67 @@ function mapOverrunRows(raw: RawRow[]): OverrunRow[] {
         euFunded: r.eu_funded == null ? null : r.eu_funded === 1,
         euProgramme: r.eu_programme ?? null,
         signedAt: r.signed_at ?? null,
+        endDate: r.end_date ?? null,
+        durationDays: r.duration_days ?? null,
       };
     });
+}
+
+interface AnnexRaw {
+  contract_id: string;
+  value_before: number | null;
+  value_after: number | null;
+  value_delta: number | null;
+  currency: string | null;
+  published_at: string | null;
+  description: string | null;
+}
+
+// The real annex history for the contracts CURRENTLY SHOWN in the leaderboard — one bounded query, not
+// a per-row round trip. The inspector is client-selected, so we pre-fetch every displayed contract's
+// amendments here and the route renders the selected row's slice from memory.
+//
+// Cost: ONE statement. The IN-list is bounded by the leaderboard LIMIT (≤ MAX_LIMIT = 200 ids; default
+// 50), so the parameter count and the join fan-out are both bounded. The join rides idx_amendments_contract
+// (unp, contract_number); rows out = the total amendments across the shown contracts (each overrun
+// contract has annex_count > 0, typically a handful). No N+1, no unbounded scan, no duplicate COUNT.
+export async function getOverrunAnnexes(
+  db: D1Database,
+  contractIds: string[],
+): Promise<OverrunAnnex[]> {
+  if (contractIds.length === 0) return [];
+  const placeholders = contractIds.map(() => '?').join(', ');
+  const res = await db
+    .prepare(
+      `SELECT c.id AS contract_id,
+              am.value_before AS value_before, am.value_after AS value_after,
+              am.value_delta AS value_delta, am.currency AS currency,
+              am.published_at AS published_at, am.description AS description
+       FROM contracts c
+       JOIN tenders t ON t.id = c.tender_id
+       JOIN amendments am ON am.unp = t.source_id AND am.contract_number = c.contract_number
+       WHERE c.id IN (${placeholders})
+       ORDER BY c.id, am.published_at, am.natural_key`,
+    )
+    .bind(...contractIds)
+    .all<AnnexRaw>();
+
+  return res.results.map((r) => {
+    const valueBeforeEur = annexEur(r.value_before, r.currency);
+    const valueAfterEur = annexEur(r.value_after, r.currency);
+    let deltaEur = annexEur(r.value_delta, r.currency);
+    if (deltaEur == null && valueBeforeEur != null && valueAfterEur != null) {
+      deltaEur = valueAfterEur - valueBeforeEur;
+    }
+    return {
+      contractId: r.contract_id,
+      date: r.published_at ?? null,
+      reason: r.description?.trim() || null,
+      valueBeforeEur,
+      valueAfterEur,
+      deltaEur,
+    };
+  });
 }
 
 const SECTOR_LABELS = new Map(CPV_SECTORS.map((s) => [s.code, s.short ?? s.label]));

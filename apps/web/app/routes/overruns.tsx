@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { count, date, money, moneyBare, pct, signedPct } from '@sigma/shared';
 import {
+  getOverrunAnnexes,
   getOverrunsAnalytics,
   type OverrunAuthorityRow,
   type OverrunRow,
@@ -23,6 +24,12 @@ import {
   scatterGeometry,
   type ScatterDatum,
 } from '../lib/overruns-chart';
+import {
+  contractStatus,
+  groupAnnexes,
+  STATUS_LABEL,
+  type AnnexEntry,
+} from '../lib/overruns-inspector';
 
 export function meta({ matches }: Route.MetaArgs) {
   return seoMeta({
@@ -43,7 +50,14 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
   return withDbRetry(async () => {
     const data = await getOverrunsAnalytics(env.DB, { by });
-    return { data, by };
+    // Pre-fetch the annex history for exactly the contracts shown in the leaderboard — one bounded
+    // IN-list query (see getOverrunAnnexes). The inspector is client-selected, so everything it needs
+    // is fetched here and rendered from memory; no per-click round trip.
+    const annexes = await getOverrunAnnexes(
+      env.DB,
+      data.rows.map((r) => r.contractId),
+    );
+    return { data, by, annexesByContract: groupAnnexes(annexes) };
   });
 }
 
@@ -156,14 +170,25 @@ function cpvText(row: OverrunRow): string {
   return row.cpvDescription ? `${row.cpvCode} — ${row.cpvDescription}` : row.cpvCode;
 }
 
-// The structured „ДЕТАЙЛИ ПО ДОГОВОРА" grid — every value is a real contracts/tenders column.
+// „Срок": the contract term — the tender's „Очакван край" date when present, else the contract's
+// duration in days. Returns null when neither is on record so the row is omitted (never fabricated).
+function termText(row: OverrunRow): string | null {
+  if (row.endDate) return date(row.endDate);
+  if (row.durationDays != null) return `${count(row.durationDays)} дни`;
+  return null;
+}
+
+// The structured „ДЕТАЙЛИ ПО ДОГОВОРА" grid — every value is a real contracts/tenders column. The
+// „Срок" row is only included when a real term value exists.
 function inspectorFields(row: OverrunRow): { k: string; v: string }[] {
+  const term = termText(row);
   return [
     { k: 'Сектор', v: row.sectorLabel },
     { k: 'Процедура', v: row.procedureType ?? '—' },
     { k: 'CPV код', v: cpvText(row) },
     { k: 'Финансиране', v: financingText(row) },
     { k: 'Сключен', v: date(row.signedAt) },
+    ...(term ? [{ k: 'Срок', v: term }] : []),
     { k: 'Възложител · ЕИК', v: `${row.authorityName} · ${row.authorityEik || '—'}` },
     { k: 'Изпълнител · ЕИК', v: `${row.bidderName} · ${row.bidderEik ?? 'непотвърден'}` },
   ];
@@ -334,11 +359,56 @@ function OverrunScatter({ rows, selected }: { rows: OverrunRow[]; selected: numb
   );
 }
 
+// ── annex history block (REAL amendment rows for the selected contract) ───────────────
+// One row per amendment from the `amendments` table (date, reason, +Δ in EUR), pre-fetched for every
+// shown contract. The title carries the real count; figures that can't be normalised to EUR show „—".
+function AnnexHistory({ annexes, contractSlug }: { annexes: AnnexEntry[]; contractSlug: string }) {
+  return (
+    <div className="ov-annex-wrap">
+      <div className="ov-mono-label ov-annex-heading">
+        История на анексите <span className="ov-accent">· {count(annexes.length)}</span>
+      </div>
+      {annexes.length ? (
+        <ol className="ov-annex-list">
+          {annexes.map((a) => (
+            <li className="ov-annex-row" key={a.seq}>
+              <div className="ov-annex-main">
+                <span className="ov-annex-seq">Анекс {a.seq}</span>
+                <span className="ov-annex-date">{date(a.date)}</span>
+                <span className="ov-annex-delta">
+                  {a.deltaEur != null ? `+${money(a.deltaEur)}` : '—'}
+                </span>
+              </div>
+              {a.reason ? <div className="ov-annex-reason">{a.reason}</div> : null}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="ov-annex-empty">
+          Подробната разбивка на анексите не е налична за този договор в обхванатите данни.
+        </p>
+      )}
+      <p className="ov-insp-source">
+        Източник ·{' '}
+        <Link to={`/contracts/${contractSlug}`}>Регистър на обществените поръчки (АОП) →</Link>
+      </p>
+    </div>
+  );
+}
+
 // ── the interactive dashboard: leaderboard selector ↔ scatter ↔ inspector ─────────────
-function OverrunsDashboard({ rows }: { rows: OverrunRow[] }) {
+function OverrunsDashboard({
+  rows,
+  annexesByContract,
+}: {
+  rows: OverrunRow[];
+  annexesByContract: Record<string, AnnexEntry[]>;
+}) {
   const [selected, setSelected] = useState(0);
   const scaleMax = Math.max(1, ...rows.map((r) => r.currentEur));
   const sel = rows[selected] ?? rows[0]!;
+  const status = contractStatus(sel.endDate);
+  const selAnnexes = annexesByContract[sel.contractId] ?? [];
   const boardFs = useFullscreen<HTMLDivElement>();
   const scatterFs = useFullscreen<HTMLDivElement>();
 
@@ -409,7 +479,12 @@ function OverrunsDashboard({ rows }: { rows: OverrunRow[] }) {
         {/* inspector */}
         <div className="ov-panel ov-inspector">
           <div className="ov-insp-head">
-            <div className="ov-mono-label ov-accent">Избран договор · #{selected + 1}</div>
+            <div className="ov-insp-head-top">
+              <div className="ov-mono-label ov-accent">Избран договор · #{selected + 1}</div>
+              {status ? (
+                <span className={`ov-status-badge ${status}`}>{STATUS_LABEL[status]}</span>
+              ) : null}
+            </div>
             <div className="ov-insp-title">
               <Link to={`/contracts/${sel.contractSlug}`}>{sel.subject}</Link>
             </div>
@@ -446,10 +521,7 @@ function OverrunsDashboard({ rows }: { rows: OverrunRow[] }) {
                 </div>
               ))}
             </dl>
-            <p className="ov-insp-foot">
-              Пълната история на анексите и документите по договора са в{' '}
-              <Link to={`/contracts/${sel.contractSlug}`}>страницата на договора →</Link>
-            </p>
+            <AnnexHistory annexes={selAnnexes} contractSlug={sel.contractSlug} />
           </div>
         </div>
       </div>
@@ -458,7 +530,7 @@ function OverrunsDashboard({ rows }: { rows: OverrunRow[] }) {
 }
 
 export default function Overruns({ loaderData }: Route.ComponentProps) {
-  const { data, by } = loaderData;
+  const { data, by, annexesByContract } = loaderData;
   const { corpus, rows, byAuthority, bySector, byYear } = data;
   const [sp] = useSearchParams();
 
@@ -542,7 +614,7 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
 
           {rows.length ? (
             <>
-              <OverrunsDashboard key={by} rows={rows} />
+              <OverrunsDashboard key={by} rows={rows} annexesByContract={annexesByContract} />
               <details className="ov-table-details">
                 <summary className="ov-table-summary">
                   Виж класацията като таблица ({count(rows.length)} договора)

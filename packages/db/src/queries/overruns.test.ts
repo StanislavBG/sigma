@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getOverrunsAnalytics, getTopOverruns } from './overruns';
+import { getOverrunAnnexes, getOverrunsAnalytics, getTopOverruns } from './overruns';
 
 // getTopOverruns runs two statements (see overruns.ts): a leaderboard SELECT (carries ORDER BY +
 // LIMIT, read via .all) and a corpus-totals SELECT (COUNT(*)/SUM, read via .first). There's no real
@@ -29,6 +29,8 @@ const rawRow = (over: Partial<Record<string, unknown>> = {}) => ({
   eu_funded: 1,
   eu_programme: 'ОПТТИ',
   signed_at: '2022-03-12',
+  end_date: '2024-12-31',
+  duration_days: 540,
   ...over,
 });
 
@@ -110,6 +112,9 @@ describe('getTopOverruns', () => {
     expect(r.signedAt).toBe('2022-03-12');
     expect(r.authorityEik).toBe('000695089');
     expect(r.bidderEik).toBe('103267194');
+    // term fields for the „Срок" row + status badge
+    expect(r.endDate).toBe('2024-12-31');
+    expect(r.durationDays).toBe(540);
   });
 
   it('keeps inspector metadata honest when columns are NULL', async () => {
@@ -122,6 +127,8 @@ describe('getTopOverruns', () => {
         eu_programme: null,
         signed_at: null,
         bidder_eik: null,
+        end_date: null,
+        duration_days: null,
       }),
     ]);
 
@@ -133,6 +140,8 @@ describe('getTopOverruns', () => {
     expect(r.euFunded).toBeNull();
     expect(r.bidderEik).toBeNull();
     expect(r.signedAt).toBeNull();
+    expect(r.endDate).toBeNull();
+    expect(r.durationDays).toBeNull();
   });
 
   it('guards against divide-by-zero by skipping rows with non-positive signing', async () => {
@@ -370,5 +379,122 @@ describe('getOverrunsAnalytics', () => {
     expect(bySector).toHaveLength(0);
     expect(byYear).toHaveLength(0);
     expect(corpus.count).toBe(0);
+  });
+});
+
+// ── getOverrunAnnexes ────────────────────────────────────────────────────────────────
+// One bounded IN-list query joining contracts → tenders → amendments. The fake records the SQL and the
+// bound params so we can assert the bounded shape (no per-row query) and the EUR normalisation.
+const annexRaw = (over: Partial<Record<string, unknown>> = {}) => ({
+  contract_id: 'c:123',
+  value_before: 1_000_000,
+  value_after: 1_300_000,
+  value_delta: 300_000,
+  currency: 'BGN',
+  published_at: '2023-05-01',
+  description: 'Допълнителни количества СМР',
+  ...over,
+});
+
+function fakeAnnexDb(rows: ReturnType<typeof annexRaw>[] = [annexRaw()]): {
+  db: D1Database;
+  sql: string[];
+  bound: unknown[][];
+} {
+  const sql: string[] = [];
+  const bound: unknown[][] = [];
+  const db = {
+    prepare(q: string) {
+      sql.push(q);
+      return {
+        bind(...args: unknown[]) {
+          bound.push(args);
+          return this;
+        },
+        async all<T>() {
+          return { results: rows as T[] };
+        },
+        async first<T>() {
+          return null as T;
+        },
+      };
+    },
+  } as unknown as D1Database;
+  return { db, sql, bound };
+}
+
+describe('getOverrunAnnexes', () => {
+  it('runs no query for an empty id list', async () => {
+    const { db, sql } = fakeAnnexDb();
+
+    const out = await getOverrunAnnexes(db, []);
+
+    expect(out).toEqual([]);
+    expect(sql).toHaveLength(0); // never touches D1 when nothing is shown
+  });
+
+  it('issues exactly one bounded IN-list query and binds every id', async () => {
+    const { db, sql, bound } = fakeAnnexDb([]);
+
+    await getOverrunAnnexes(db, ['c:1', 'c:2', 'c:3']);
+
+    expect(sql).toHaveLength(1); // one statement — no per-contract N+1
+    expect(sql[0]).toContain('JOIN amendments am');
+    expect(sql[0]).toContain('IN (?, ?, ?)'); // placeholder per id, bounded by the leaderboard
+    expect(bound[0]).toEqual(['c:1', 'c:2', 'c:3']);
+  });
+
+  it('normalises BGN amendment values to EUR (peg) and keeps the reason', async () => {
+    const { db } = fakeAnnexDb([annexRaw()]);
+
+    const [a] = await getOverrunAnnexes(db, ['c:123']);
+
+    expect(a!.contractId).toBe('c:123');
+    expect(a!.date).toBe('2023-05-01');
+    expect(a!.reason).toBe('Допълнителни количества СМР');
+    expect(a!.valueBeforeEur).toBeCloseTo(1_000_000 / 1.95583, 2);
+    expect(a!.valueAfterEur).toBeCloseTo(1_300_000 / 1.95583, 2);
+    expect(a!.deltaEur).toBeCloseTo(300_000 / 1.95583, 2);
+  });
+
+  it('passes EUR values through unconverted', async () => {
+    const { db } = fakeAnnexDb([
+      annexRaw({ currency: 'EUR', value_before: 500, value_after: 800, value_delta: 300 }),
+    ]);
+
+    const [a] = await getOverrunAnnexes(db, ['c:123']);
+
+    expect(a!.deltaEur).toBe(300);
+    expect(a!.valueAfterEur).toBe(800);
+  });
+
+  it('derives the delta from before/after when value_delta is NULL', async () => {
+    const { db } = fakeAnnexDb([
+      annexRaw({ currency: 'EUR', value_before: 500, value_after: 800, value_delta: null }),
+    ]);
+
+    const [a] = await getOverrunAnnexes(db, ['c:123']);
+
+    expect(a!.deltaEur).toBe(300);
+  });
+
+  it('omits the EUR figure for a currency without an fx rate', async () => {
+    const { db } = fakeAnnexDb([
+      annexRaw({ currency: 'USD', value_before: 500, value_after: 800, value_delta: 300 }),
+    ]);
+
+    const [a] = await getOverrunAnnexes(db, ['c:123']);
+
+    expect(a!.deltaEur).toBeNull();
+    expect(a!.valueBeforeEur).toBeNull();
+    expect(a!.valueAfterEur).toBeNull();
+  });
+
+  it('keeps a missing reason honest (NULL, not an empty string)', async () => {
+    const { db } = fakeAnnexDb([annexRaw({ description: '   ' })]);
+
+    const [a] = await getOverrunAnnexes(db, ['c:123']);
+
+    expect(a!.reason).toBeNull();
   });
 });
