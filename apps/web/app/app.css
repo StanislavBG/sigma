@@ -3965,20 +3965,16 @@ tbody td,
    moved out of inline `style=` to keep the route CSP-clean (style-src; see docs/review-accessibility).
    Only genuinely JS-computed values (bar widths, active-state colours, SVG fill/stroke var()s) stay
    inline. The mono face mirrors the design mock's IBM Plex Mono, falling back to the app token. */
+/* vertical layout (design): a single column — full-width chart → year table → contracts grid */
 .trend-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.95fr) minmax(330px, 1fr);
-  gap: 14px;
-}
-@media (max-width: 880px) {
-  .trend-grid {
-    grid-template-columns: 1fr;
-  }
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 .trend-col {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 20px;
   min-width: 0;
 }
 .trend-panel {
@@ -4172,8 +4168,12 @@ tbody td,
 .trend-panel-title {
   margin: 0;
   font-family: var(--font-serif, Georgia, serif);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
+}
+.trend-panel-title em {
+  font-style: italic;
+  color: var(--accent);
 }
 .trend-hint {
   font:
@@ -4220,6 +4220,11 @@ tbody td,
 }
 .trend-chart-body {
   margin-top: 10px;
+  /* full-width chart in the vertical layout — give it real height (design ≈ 380px) */
+  min-height: 380px;
+}
+.trend-chart-panel--full .trend-chart-body {
+  min-height: 0;
 }
 .trend-chart-empty {
   padding: 24px 0;
@@ -4337,14 +4342,19 @@ tbody td,
     var(--font-mono);
   color: var(--ink-soft);
 }
+/* contracts as a full-width responsive card grid (design), not a narrow side list */
 .trend-rail-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 8px 16px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 12px;
 }
 .trend-rail-item {
-  padding: 7px 16px;
-  border-top: 1px solid var(--rule-soft);
+  padding: 11px 13px;
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
 }
 .trend-rail-row {
   display: flex;
@@ -4410,6 +4420,7 @@ tbody td,
   padding: 16px;
 }
 .trend-rail-end {
+  grid-column: 1 / -1;
   padding: 12px 16px 16px;
   font:
     400 10px/1 'IBM Plex Mono',

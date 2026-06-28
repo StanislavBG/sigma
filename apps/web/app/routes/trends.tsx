@@ -369,7 +369,9 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
             {/* year table */}
             <div className="trend-panel trend-years-panel">
               <div className="trend-panel-head">
-                <h2 className="trend-panel-title">По години</h2>
+                <h2 className="trend-panel-title">
+                  По <em>години</em>
+                </h2>
                 <span className="trend-hint">кликни година за филтър ↓</span>
               </div>
               {data.years.length > 0 ? (
@@ -463,7 +465,9 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
           {/* right rail: newest contracts */}
           <div className="trend-panel trend-rail">
             <div className="trend-rail-head">
-              <h2 className="trend-panel-title">Най-нови договори</h2>
+              <h2 className="trend-panel-title">
+                Най-нови <em>договори</em>
+              </h2>
               <a href="/trends.rss" className="trend-rail-rss">
                 RSS ↗
               </a>
