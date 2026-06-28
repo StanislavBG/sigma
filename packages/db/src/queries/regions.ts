@@ -81,7 +81,9 @@ async function sectorOptions(db: D1Database): Promise<SectorRef[]> {
 // Lean headline for the /analytics landing card — the region count (always the 28 NUTS3 regions)
 // and София-столица's share of national procurement value. ONE rollup query (authority_totals
 // grouped by region, the same cheap source as the unfiltered choropleth), folded in JS to the
-// BG411 row over the grand total. No 190k contract scan.
+// BG411 row over the ATTRIBUTED total. The denominator counts only rows that resolve to a real BG
+// region (the region-NULL / unattributed bucket is excluded), matching getRegionalSpending's 28-region
+// denominator so the landing „В СОФИЯ" share equals the /map share. No 190k contract scan.
 export interface RegionHeadline {
   regionCount: number;
   sofiaShare: number;
@@ -99,8 +101,10 @@ export async function getRegionHeadline(db: D1Database): Promise<RegionHeadline>
   let totalEur = 0;
   let sofiaEur = 0;
   for (const r of results) {
+    const region = regionByName(r.region);
+    if (!region) continue; // unattributed (region-NULL or unknown) — excluded from the denominator
     totalEur += r.value_eur;
-    if (regionByName(r.region)?.nuts3 === 'BG411') sofiaEur += r.value_eur;
+    if (region.nuts3 === 'BG411') sofiaEur += r.value_eur;
   }
   return {
     regionCount: BG_REGIONS.length,

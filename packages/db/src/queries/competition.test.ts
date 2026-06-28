@@ -237,9 +237,11 @@ describe('getCompetition', () => {
 describe('getOpaqueShareByYear', () => {
   function fakeDb(
     rows: { year: string; value_eur: number; single_value_eur: number }[],
+    capture?: string[],
   ): D1Database {
     return {
-      prepare() {
+      prepare(sql: string) {
+        capture?.push(sql);
         return {
           bind() {
             return this;
@@ -263,5 +265,13 @@ describe('getOpaqueShareByYear', () => {
       { year: '2020', valueEur: 1000, singleOfferValueEur: 200 },
       { year: '2025', valueEur: 2000, singleOfferValueEur: 900 },
     ]);
+  });
+
+  it('excludes the in-progress current calendar year (headline reads the latest complete year)', async () => {
+    const sql: string[] = [];
+    await getOpaqueShareByYear(fakeDb([], sql));
+    // Capped below the current year rather than the partial-period `<= date('now')`.
+    expect(sql[0]).toContain("substr(c.signed_at, 1, 4) < strftime('%Y', 'now')");
+    expect(sql[0]).not.toContain("c.signed_at <= date('now')");
   });
 });

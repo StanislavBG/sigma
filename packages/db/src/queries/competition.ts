@@ -317,7 +317,12 @@ export async function getCompetition(
 // Single-offer (one-bid) VALUE share per signing year, for the /analytics landing „Конкуренция"
 // card. Same basis as competitionTotals.singleOfferValueShare (contracts with a known offer count,
 // amount_eur IS NOT NULL, the site-wide value basis) so the landing matches the /competition
-// dashboard. ONE bounded GROUP BY over the 2020→today window (a handful of year rows out).
+// dashboard. ONE bounded GROUP BY over complete years (a handful of year rows out).
+//
+// The in-progress current calendar year is EXCLUDED: opaqueHeadline reports the latest year's share
+// and the pp-change off it, and a partial year (half the contracts signed so far) would understate
+// both. We cap at the year before `strftime('%Y','now')` so the headline always reads the latest
+// COMPLETE year — mirroring trend.ts dropping its partial as_of year.
 export interface OpaqueYearRow {
   year: string;
   valueEur: number;
@@ -334,7 +339,8 @@ export async function getOpaqueShareByYear(db: D1Database): Promise<OpaqueYearRo
        WHERE c.amount_eur IS NOT NULL
          AND c.bids_received IS NOT NULL AND c.bids_received >= 1
          AND substr(c.signed_at, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
-         AND c.signed_at >= '2020-01-01' AND c.signed_at <= date('now')
+         AND c.signed_at >= '2020-01-01'
+         AND substr(c.signed_at, 1, 4) < strftime('%Y', 'now')
        GROUP BY year ORDER BY year`,
     )
     .all<{ year: string; value_eur: number; single_value_eur: number }>();

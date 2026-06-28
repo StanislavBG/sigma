@@ -33,23 +33,9 @@ export function growthMultiple(medianPct: number | null | undefined): string {
   return `${multiple.toFixed(1).replace('.', ',')}×`;
 }
 
-export interface YearGrowthInput {
-  yoyPct: number | null;
-  partial: boolean;
-}
-
-// Average year-over-year growth across the full years on record (the partial final year and any year
-// without a prior comparison are excluded — see getSpendingTrend, which sets yoyPct=null for those).
-// Returns a ratio (0.18 = +18%), or null when there is nothing comparable to average.
-export function avgYoyGrowth(years: YearGrowthInput[]): number | null {
-  const usable = years
-    .filter((y) => !y.partial && y.yoyPct != null && Number.isFinite(y.yoyPct))
-    .map((y) => y.yoyPct as number);
-  if (usable.length === 0) return null;
-  return usable.reduce((sum, v) => sum + v, 0) / usable.length;
-}
-
-// „+18%/год" — average yearly growth as a signed integer percentage with the per-year suffix.
+// „+18%/год" — yearly growth as a signed integer percentage with the per-year suffix. The input ratio
+// is the canonical /trends growth estimate (3-year trailing median, clamped) so the landing card and
+// the /trends header always read the same figure.
 export function formatYearlyGrowth(ratio: number | null | undefined): string {
   if (ratio == null || !Number.isFinite(ratio)) return EM_DASH;
   return `${signedPct(ratio, 0)}/год`;

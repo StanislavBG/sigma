@@ -12,7 +12,6 @@ import type { Route } from './+types/analytics';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { publicCache } from '../lib/cache';
 import {
-  avgYoyGrowth,
   formatPeakMonth,
   formatPpChange,
   formatYearlyGrowth,
@@ -20,6 +19,7 @@ import {
   opaqueHeadline,
   peakPoint,
 } from '../lib/analytics-stats';
+import { estimateYoyGrowth } from '../lib/trends-forecast';
 import { seoMeta } from '../lib/meta';
 
 export function meta({ matches }: Route.MetaArgs) {
@@ -55,11 +55,15 @@ export async function loader({ context }: Route.LoaderArgs) {
   ]);
 
   const peak = peakPoint(trend.points);
+  // Canonical YoY growth — the SAME helper /trends uses (3-year trailing median, clamped) over the
+  // SAME trend points the loader already fetched, so the landing card matches /trends exactly. The
+  // multiplier (1.15) is reported as a ratio (0.15 → „+15%/год") via formatYearlyGrowth.
+  const growth = estimateYoyGrowth(trend.points);
   return {
     overruns,
     flows,
     region,
-    trend: { avgYoy: avgYoyGrowth(trend.years), peakPeriod: peak?.period ?? null },
+    trend: { avgYoy: growth.value - 1, peakPeriod: peak?.period ?? null },
     opaque: opaqueHeadline(opaque),
   };
 }

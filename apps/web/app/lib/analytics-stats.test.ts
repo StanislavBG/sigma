@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  avgYoyGrowth,
   formatPeakMonth,
   formatPpChange,
   formatYearlyGrowth,
@@ -21,28 +20,6 @@ describe('growthMultiple', () => {
     expect(growthMultiple(null)).toBe('—');
     expect(growthMultiple(undefined)).toBe('—');
     expect(growthMultiple(NaN)).toBe('—');
-  });
-});
-
-describe('avgYoyGrowth', () => {
-  it('averages the YoY ratios of full, comparable years', () => {
-    const avg = avgYoyGrowth([
-      { yoyPct: null, partial: false }, // first year, no prior
-      { yoyPct: 0.2, partial: false },
-      { yoyPct: 0.1, partial: false },
-    ]);
-    expect(avg).toBeCloseTo(0.15);
-  });
-  it('excludes the partial final year', () => {
-    const avg = avgYoyGrowth([
-      { yoyPct: 0.2, partial: false },
-      { yoyPct: -0.9, partial: true }, // partial — must not drag the average down
-    ]);
-    expect(avg).toBeCloseTo(0.2);
-  });
-  it('returns null when nothing is comparable', () => {
-    expect(avgYoyGrowth([{ yoyPct: null, partial: false }])).toBeNull();
-    expect(avgYoyGrowth([])).toBeNull();
   });
 });
 

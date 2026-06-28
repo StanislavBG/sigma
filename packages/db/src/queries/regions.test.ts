@@ -97,18 +97,19 @@ describe('getRegionHeadline', () => {
     } as unknown as D1Database;
   }
 
-  it('reports the 28-region count and София-столица share of the national total', async () => {
+  it('reports the 28-region count and София-столица share of the attributed total', async () => {
     const h = await getRegionHeadline(
       fakeDb([
         { region: 'София (столица)', value_eur: 6000 }, // BG411
         { region: 'Пловдив', value_eur: 3000 },
-        { region: null, value_eur: 1000 }, // unattributed, still in the denominator
+        { region: null, value_eur: 1000 }, // unattributed — EXCLUDED from the denominator
+        { region: 'Несъществуваща област', value_eur: 5000 }, // unknown — also excluded
       ]),
     );
     expect(h.regionCount).toBe(28);
     expect(h.sofiaEur).toBe(6000);
-    expect(h.totalEur).toBe(10000);
-    expect(h.sofiaShare).toBeCloseTo(0.6);
+    expect(h.totalEur).toBe(9000); // 6000 + 3000 only — attributed regions, matching getRegionalSpending
+    expect(h.sofiaShare).toBeCloseTo(6000 / 9000);
   });
 
   it('does not count the surrounding София oblast (BG412) as the capital', async () => {
