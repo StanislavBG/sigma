@@ -188,7 +188,15 @@ function OverrunBar({
 }
 
 // ── the „Облак на раздуването" scatter (visual summary; role=img + the list carries the data) ──
-function OverrunScatter({ rows, selected }: { rows: OverrunRow[]; selected: number }) {
+function OverrunScatter({
+  rows,
+  selected,
+  onSelect,
+}: {
+  rows: OverrunRow[];
+  selected: number;
+  onSelect: (index: number) => void;
+}) {
   const data: ScatterDatum[] = rows.map((r, i) => ({
     id: r.contractId,
     pct: r.pct,
@@ -294,7 +302,11 @@ function OverrunScatter({ rows, selected }: { rows: OverrunRow[]; selected: numb
               fillOpacity={isSel ? 1 : p.big ? 0.78 : 0.5}
               stroke={PAPER}
               strokeWidth={1}
-            />
+              style={{ cursor: 'pointer' }}
+              onClick={() => onSelect(p.rank - 1)}
+            >
+              <title>{`#${p.rank} · ${rows[p.rank - 1]?.subject ?? ''}`}</title>
+            </circle>
             {(p.big || isSel) && (
               <text
                 x={p.x + p.r + 3}
@@ -450,7 +462,7 @@ function OverrunsDashboard({
               </div>
             </div>
             <div className="ov-scatter-body">
-              <OverrunScatter rows={rows} selected={selected} />
+              <OverrunScatter rows={rows} selected={selected} onSelect={setSelected} />
             </div>
           </div>
 
