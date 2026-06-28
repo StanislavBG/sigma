@@ -25,13 +25,28 @@ export interface OverrunRow {
   subject: string;
   authorityName: string;
   authoritySlug: string;
+  /** Authority ЕИК (the authority-route key) — for the inspector „Възложител · ЕИК" line. */
+  authorityEik: string;
   bidderName: string;
   bidderSlug: string;
+  /** Bidder ЕИК (digits-only, NULL for name-keyed bidders without a valid ЕИК). */
+  bidderEik: string | null;
   signingEur: number;
   currentEur: number;
   deltaEur: number;
   pct: number;
   annexCount: number;
+  // ── real contract metadata for the inspector „ДЕТАЙЛИ ПО ДОГОВОРА" grid ──
+  /** Curated CPV-division label (e.g. „Строителство"), from the CPV code's first two digits. */
+  sectorLabel: string;
+  cpvCode: string | null;
+  cpvDescription: string | null;
+  procedureType: string | null;
+  /** true = EU-funded, false = national, null = unknown. */
+  euFunded: boolean | null;
+  /** Operational programme name when present (contract-level, falling back to tender-level). */
+  euProgramme: string | null;
+  signedAt: string | null;
 }
 
 export interface OverrunsResult {
@@ -46,14 +61,16 @@ export interface OverrunsParams {
 }
 
 // Corpus headline figures for the whole overrun set. `shareOfSigning` puts the inflation in context:
-// the total ballooning measured against every contract's signed value (the honest denominator — only
-// rows with a usable signing value, suspect rows excluded).
+// the total ballooning measured against the corpus-wide signed value — the sum of EVERY contract's
+// signing_value_eur where it is present and positive. That denominator is intentionally corpus-wide:
+// it includes contracts that never ballooned and annex-suspect rows (whose signing value is still
+// trustworthy even though their post-annex value is suppressed). It does NOT special-case suspect
+// rows out — see `corpus_signing_eur` below for the exact SQL.
 export interface OverrunCorpus {
   totalOverrunEur: number;
   count: number;
   avgPct: number;
   medianPct: number;
-  overrunSigningEur: number;
   corpusSigningEur: number;
   shareOfSigning: number;
 }
@@ -122,9 +139,16 @@ interface RawRow {
   bidder_id: string;
   bidder_name: string;
   bidder_kind: 'company' | 'consortium';
+  bidder_eik: string | null;
   signing_eur: number;
   current_eur: number;
   annex_count: number;
+  cpv_code: string | null;
+  cpv_description: string | null;
+  procedure_type: string | null;
+  eu_funded: number | null;
+  eu_programme: string | null;
+  signed_at: string | null;
 }
 
 function clampLimit(limit: number | undefined, fallback: number, max: number): number {
@@ -143,8 +167,14 @@ function leaderboardSql(by: 'absolute' | 'percent'): string {
                 COALESCE(NULLIF(TRIM(c.contract_subject), ''), t.title) AS subject,
                 t.authority_id AS authority_id, a.name AS authority_name,
                 c.bidder_id AS bidder_id, b.name AS bidder_name, b.kind AS bidder_kind,
+                b.eik_normalized AS bidder_eik,
                 c.signing_value_eur AS signing_eur, c.current_value_eur AS current_eur,
-                c.annex_count AS annex_count
+                c.annex_count AS annex_count,
+                t.cpv_code AS cpv_code, t.cpv_description AS cpv_description,
+                t.procedure_type AS procedure_type,
+                c.eu_funded AS eu_funded,
+                COALESCE(c.eu_programme, t.eu_programme) AS eu_programme,
+                c.signed_at AS signed_at
          FROM contracts c
          JOIN tenders t ON t.id = c.tender_id
          JOIN authorities a ON a.id = t.authority_id
@@ -162,19 +192,29 @@ function mapOverrunRows(raw: RawRow[]): OverrunRow[] {
     .map((r) => {
       const deltaEur = r.current_eur - r.signing_eur;
       const bidderName = cleanName(r.bidder_name);
+      const division = (r.cpv_code ?? '').slice(0, 2);
       return {
         contractId: r.contract_id,
         contractSlug: contractSlug(r.contract_id),
         subject: r.subject,
         authorityName: cleanName(r.authority_name),
         authoritySlug: authoritySlug(r.authority_id),
+        authorityEik: authoritySlug(r.authority_id),
         bidderName: entityName(bidderName, r.bidder_kind),
         bidderSlug: companySlug(r.bidder_id),
+        bidderEik: r.bidder_eik ?? null,
         signingEur: r.signing_eur,
         currentEur: r.current_eur,
         deltaEur,
         pct: deltaEur / r.signing_eur,
         annexCount: r.annex_count,
+        sectorLabel: SECTOR_LABELS.get(division) ?? (division ? `Сектор ${division}` : 'Без код'),
+        cpvCode: r.cpv_code ?? null,
+        cpvDescription: r.cpv_description ?? null,
+        procedureType: r.procedure_type ?? null,
+        euFunded: r.eu_funded == null ? null : r.eu_funded === 1,
+        euProgramme: r.eu_programme ?? null,
+        signedAt: r.signed_at ?? null,
       };
     });
 }
@@ -210,7 +250,6 @@ interface CorpusRaw {
   total_overrun_eur: number;
   count: number;
   avg_pct: number;
-  overrun_signing_eur: number;
   corpus_signing_eur: number;
 }
 
@@ -249,14 +288,15 @@ export async function getOverrunsAnalytics(
   const [rowsRes, corpusRow, medianRow, authRes, sectorRes, yearRes] = await Promise.all([
     db.prepare(leaderboardSql(by)).bind(boardLimit).all<RawRow>(),
     // Single pass over contracts: conditional SUM/AVG so the overrun totals and the corpus signing
-    // denominator come from ONE scan, never a duplicate COUNT.
+    // denominator come from ONE scan, never a duplicate COUNT. `corpus_signing_eur` is corpus-wide
+    // (every contract with a present, positive signing value — see OverrunCorpus); it is the
+    // denominator for shareOfSigning, not the overrun subset's own signed value.
     db
       .prepare(
         `SELECT
            COALESCE(SUM(CASE WHEN ${OVERRUN_WHERE} THEN ${DELTA} END), 0) AS total_overrun_eur,
            COALESCE(SUM(CASE WHEN ${OVERRUN_WHERE} THEN 1 ELSE 0 END), 0) AS count,
            COALESCE(AVG(CASE WHEN ${OVERRUN_WHERE} THEN ${PCT} END), 0) AS avg_pct,
-           COALESCE(SUM(CASE WHEN ${OVERRUN_WHERE} THEN c.signing_value_eur END), 0) AS overrun_signing_eur,
            COALESCE(SUM(CASE WHEN c.signing_value_eur IS NOT NULL AND c.signing_value_eur > 0
                             THEN c.signing_value_eur END), 0) AS corpus_signing_eur
          FROM contracts c`,
@@ -332,7 +372,6 @@ export async function getOverrunsAnalytics(
     count: corpusRow?.count ?? 0,
     avgPct: corpusRow?.avg_pct ?? 0,
     medianPct: medianRow?.median_pct ?? 0,
-    overrunSigningEur: corpusRow?.overrun_signing_eur ?? 0,
     corpusSigningEur,
     shareOfSigning: corpusSigningEur > 0 ? totalOverrunEur / corpusSigningEur : 0,
   };

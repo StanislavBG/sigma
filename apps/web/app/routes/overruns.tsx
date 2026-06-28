@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { count, money, moneyBare, pct, signedPct } from '@sigma/shared';
+import { count, date, money, moneyBare, pct, signedPct } from '@sigma/shared';
 import {
   getOverrunsAnalytics,
   type OverrunAuthorityRow,
@@ -47,32 +47,15 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 // ── design tokens (mock hexes → app CSS variables) ───────────────────────────────────
+// Static layout/typography styles live in app.css (block „overruns-dashboard"). These constants are
+// kept ONLY for the SVG scatter's presentation attributes (fill/stroke) and the JS-computed bar
+// geometry — the few places where a value is data-driven and cannot be a static class.
 const INK = 'var(--ink)';
-const INK_MID = 'var(--ink-mid)';
 const INK_SOFT = 'var(--ink-soft)';
 const ACCENT = 'var(--accent)';
 const RULE = 'var(--rule)';
 const RULE_SOFT = 'var(--rule-soft)';
 const PAPER = 'var(--paper)';
-const PAPER_WARM = 'var(--paper-warm)';
-const MONO = 'var(--font-mono)';
-const SERIF = 'var(--font-serif)';
-
-const monoLabel: React.CSSProperties = {
-  font: `500 9px/1 ${MONO}`,
-  letterSpacing: '.12em',
-  color: INK_SOFT,
-  textTransform: 'uppercase',
-};
-
-const panel: React.CSSProperties = {
-  background: PAPER_WARM,
-  border: `1px solid ${RULE}`,
-  borderRadius: 4,
-  display: 'flex',
-  flexDirection: 'column',
-  minHeight: 0,
-};
 
 // ── leaderboard table (the accessible figures, every row linked) ──────────────────────
 const contractColumns: Column<OverrunRow>[] = [
@@ -158,40 +141,41 @@ const yearColumns: Column<OverrunYearRow>[] = [
   { key: 'count', header: 'Договори', align: 'num', cell: (r) => count(r.count) },
 ];
 
+// ── inspector field helpers (REAL contract metadata, mock-faithful formatting) ────────
+// „Финансиране": EU-funded → „Европейско [· programme]", national → „Национално", unknown → „—".
+function financingText(row: OverrunRow): string {
+  if (row.euFunded == null) return '—';
+  if (!row.euFunded) return 'Национално';
+  return row.euProgramme ? `Европейско · ${row.euProgramme}` : 'Европейско';
+}
+
+// „CPV код": „45233110 — Строеж на магистрали" when both present; code alone, or „—" when absent.
+function cpvText(row: OverrunRow): string {
+  if (!row.cpvCode) return '—';
+  return row.cpvDescription ? `${row.cpvCode} — ${row.cpvDescription}` : row.cpvCode;
+}
+
+// The structured „ДЕТАЙЛИ ПО ДОГОВОРА" grid — every value is a real contracts/tenders column.
+function inspectorFields(row: OverrunRow): { k: string; v: string }[] {
+  return [
+    { k: 'Сектор', v: row.sectorLabel },
+    { k: 'Процедура', v: row.procedureType ?? '—' },
+    { k: 'CPV код', v: cpvText(row) },
+    { k: 'Финансиране', v: financingText(row) },
+    { k: 'Сключен', v: date(row.signedAt) },
+    { k: 'Възложител · ЕИК', v: `${row.authorityName} · ${row.authorityEik || '—'}` },
+    { k: 'Изпълнител · ЕИК', v: `${row.bidderName} · ${row.bidderEik ?? 'непотвърден'}` },
+  ];
+}
+
 // ── KPI band (the mock's 3 headline figures + the two context KPIs, mono numerics) ────
 function KpiBand({ cells }: { cells: { num: string; label: string; accent?: boolean }[] }) {
   return (
-    <dl
-      aria-label="Обобщение на раздуването"
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 0,
-        margin: 'var(--s-4) 0',
-        padding: '14px 0',
-        borderTop: `1px solid ${INK}`,
-        borderBottom: `1px solid ${RULE}`,
-      }}
-    >
-      {cells.map((c, i) => (
-        <div
-          key={c.label}
-          style={{
-            padding: i === 0 ? '0 22px 0 0' : '0 22px',
-            borderLeft: i === 0 ? undefined : `1px solid ${RULE}`,
-          }}
-        >
-          <dd
-            style={{
-              margin: 0,
-              font: `600 24px/1 ${MONO}`,
-              fontVariantNumeric: 'tabular-nums',
-              color: c.accent ? ACCENT : INK,
-            }}
-          >
-            {c.num}
-          </dd>
-          <dt style={{ ...monoLabel, marginTop: 6, letterSpacing: '.14em' }}>{c.label}</dt>
+    <dl aria-label="Обобщение на раздуването" className="ov-kpi">
+      {cells.map((c) => (
+        <div key={c.label} className="ov-kpi-cell">
+          <dd className={c.accent ? 'ov-kpi-num accent' : 'ov-kpi-num'}>{c.num}</dd>
+          <dt className="ov-kpi-label">{c.label}</dt>
         </div>
       ))}
     </dl>
@@ -199,6 +183,8 @@ function KpiBand({ cells }: { cells: { num: string; label: string; accent?: bool
 }
 
 // ── before→now stacked bar (decorative; the figures sit beside it as text) ────────────
+// Only the geometry (segment widths, overall length) is inline — it is data-driven. Colours and the
+// dashed track live in app.css.
 function OverrunBar({
   signingEur,
   currentEur,
@@ -210,30 +196,11 @@ function OverrunBar({
 }) {
   const g = overrunBarGeometry(signingEur, currentEur, scaleMaxEur);
   return (
-    <div style={{ position: 'relative', height: 13, marginTop: 5 }} aria-hidden="true">
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          borderRadius: 2,
-          background: `repeating-linear-gradient(90deg, transparent, transparent 48px, ${RULE_SOFT} 48px, ${RULE_SOFT} 49px)`,
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          display: 'flex',
-          height: 13,
-          width: `${Math.max(g.nowScalePct, 0.8)}%`,
-          minWidth: 3,
-          borderRadius: '0 2px 2px 0',
-          overflow: 'hidden',
-        }}
-      >
-        <div style={{ height: '100%', background: INK, width: `${g.signPct}%` }} />
-        <div style={{ height: '100%', background: ACCENT, width: `${g.incPct}%` }} />
+    <div className="ov-bar" aria-hidden="true">
+      <div className="ov-bar-track" />
+      <div className="ov-bar-fill" style={{ width: `${Math.max(g.nowScalePct, 0.8)}%` }}>
+        <div className="ov-bar-sign" style={{ width: `${g.signPct}%` }} />
+        <div className="ov-bar-inc" style={{ width: `${g.incPct}%` }} />
       </div>
     </div>
   );
@@ -251,8 +218,11 @@ function OverrunScatter({ rows, selected }: { rows: OverrunRow[]; selected: numb
   const geo = scatterGeometry(data);
   const { axis } = geo;
   const selectedId = rows[selected]?.contractId;
+  // Bulgarian decimal comma for the „к%" (thousands) tick labels — e.g. +2,5к%, +10к%.
   const xtickLabel = (pctPercent: number) =>
-    pctPercent >= 1000 ? `+${pctPercent / 1000}к%` : `+${pctPercent}%`;
+    pctPercent >= 1000
+      ? `+${(Math.round(pctPercent / 100) / 10).toString().replace('.', ',')}к%`
+      : `+${pctPercent}%`;
 
   return (
     <svg
@@ -262,7 +232,7 @@ function OverrunScatter({ rows, selected }: { rows: OverrunRow[]; selected: numb
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label="Облак на раздуването: всеки договор по процентно нарастване (хоризонтално, логаритмично) спрямо абсолютно раздуване в евро (вертикално); размерът на кръга расте с броя анекси. Конкретните стойности са в класацията вляво."
-      style={{ display: 'block', overflow: 'visible' }}
+      className="ov-scatter-svg"
     >
       <line
         x1={axis.left}
@@ -370,45 +340,16 @@ function OverrunsDashboard({ rows }: { rows: OverrunRow[] }) {
   const sel = rows[selected] ?? rows[0]!;
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1.5fr) minmax(320px, 1fr)',
-        gap: 14,
-        alignItems: 'stretch',
-      }}
-      className="overruns-grid"
-    >
-      <style>
-        {'@media (max-width: 860px){.overruns-grid{grid-template-columns:1fr !important}}'}
-      </style>
+    <div className="overruns-grid">
       {/* LEFT — leaderboard bars (buttons select the inspector; figures are text) */}
-      <div style={{ ...panel }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            justifyContent: 'space-between',
-            padding: '13px 16px 8px',
-          }}
-        >
-          <div style={{ font: `600 16px/1.2 ${SERIF}`, color: INK }}>
-            Най-голямо <em style={{ color: ACCENT }}>раздуване</em>
+      <div className="ov-panel ov-board">
+        <div className="ov-board-head">
+          <div className="ov-board-title">
+            Най-голямо <em>раздуване</em>
           </div>
-          <div style={{ font: `400 10px/1 ${MONO}`, color: INK_SOFT }}>
-            скала 0 — {moneyBare(scaleMax)}
-          </div>
+          <div className="ov-board-scale">скала 0 — {moneyBare(scaleMax)}</div>
         </div>
-        <ol
-          className="scrolly"
-          style={{
-            listStyle: 'none',
-            margin: 0,
-            padding: '0 8px 8px',
-            overflow: 'auto',
-            maxHeight: 520,
-          }}
-        >
+        <ol className="scrolly ov-board-list">
           {rows.map((r, i) => {
             const active = i === selected;
             return (
@@ -417,47 +358,14 @@ function OverrunsDashboard({ rows }: { rows: OverrunRow[] }) {
                   type="button"
                   onClick={() => setSelected(i)}
                   aria-pressed={active}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '22px 1fr',
-                    gap: 11,
-                    alignItems: 'center',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '8px 8px',
-                    border: 'none',
-                    borderBottom: `1px solid ${RULE_SOFT}`,
-                    borderLeft: `2px solid ${active ? ACCENT : 'transparent'}`,
-                    background: active
-                      ? 'color-mix(in srgb, var(--accent) 10%, transparent)'
-                      : 'transparent',
-                    cursor: 'pointer',
-                    font: 'inherit',
-                  }}
+                  className="ov-row"
                 >
-                  <span style={{ font: `600 15px/1 ${SERIF}`, color: ACCENT, textAlign: 'center' }}>
-                    {i + 1}
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span
-                      style={{
-                        display: 'flex',
-                        alignItems: 'baseline',
-                        justifyContent: 'space-between',
-                        gap: 10,
-                      }}
-                    >
-                      <span
-                        className="clamp1"
-                        style={{ fontSize: 12, fontWeight: 500, color: INK }}
-                      >
-                        {r.subject}
-                      </span>
-                      <span
-                        style={{ whiteSpace: 'nowrap', font: `600 10.5px/1 ${MONO}`, color: INK }}
-                      >
-                        {money(r.currentEur)}{' '}
-                        <span style={{ color: ACCENT }}>{signedPct(r.pct)}</span>
+                  <span className="ov-row-rank">{i + 1}</span>
+                  <span className="ov-row-body">
+                    <span className="ov-row-head">
+                      <span className="clamp1 ov-row-subject">{r.subject}</span>
+                      <span className="ov-row-value">
+                        {money(r.currentEur)} <span className="ov-accent">{signedPct(r.pct)}</span>
                       </span>
                     </span>
                     <OverrunBar
@@ -465,16 +373,8 @@ function OverrunsDashboard({ rows }: { rows: OverrunRow[] }) {
                       currentEur={r.currentEur}
                       scaleMaxEur={scaleMax}
                     />
-                    <span
-                      className="clamp1"
-                      style={{
-                        display: 'block',
-                        marginTop: 4,
-                        font: `400 9px/1.2 ${MONO}`,
-                        color: INK_SOFT,
-                      }}
-                    >
-                      {r.authorityName} <span style={{ color: ACCENT }}>→</span> {r.bidderName} · от{' '}
+                    <span className="clamp1 ov-row-meta">
+                      {r.authorityName} <span className="ov-accent">→</span> {r.bidderName} · от{' '}
                       {money(r.signingEur)} · {count(r.annexCount)} анекса
                     </span>
                   </span>
@@ -486,88 +386,59 @@ function OverrunsDashboard({ rows }: { rows: OverrunRow[] }) {
       </div>
 
       {/* RIGHT — scatter cloud + inspector */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
-        <div style={{ ...panel, padding: '13px 16px 8px', minHeight: 230 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-            <div style={{ font: `600 16px/1.2 ${SERIF}`, color: INK }}>Облак на раздуването</div>
-            <div style={{ font: `400 9.5px/1 ${MONO}`, color: INK_SOFT }}>размер = брой анекси</div>
+      <div className="ov-right">
+        <div className="ov-panel ov-scatter-panel">
+          <div className="ov-scatter-head">
+            <div className="ov-panel-title">Облак на раздуването</div>
+            <div className="ov-panel-note">размер = брой анекси</div>
           </div>
-          <div style={{ flex: 1, minHeight: 200, marginTop: 6 }}>
+          <div className="ov-scatter-body">
             <OverrunScatter rows={rows} selected={selected} />
           </div>
         </div>
 
         {/* inspector */}
-        <div style={{ ...panel }}>
-          <div style={{ padding: '13px 16px 12px', borderBottom: `1px solid ${RULE}` }}>
-            <div style={{ ...monoLabel, color: ACCENT }}>Избран договор · #{selected + 1}</div>
-            <div
-              style={{
-                marginTop: 8,
-                fontSize: 12.5,
-                fontWeight: 600,
-                lineHeight: 1.32,
-                color: INK,
-              }}
-            >
+        <div className="ov-panel ov-inspector">
+          <div className="ov-insp-head">
+            <div className="ov-mono-label ov-accent">Избран договор · #{selected + 1}</div>
+            <div className="ov-insp-title">
               <Link to={`/contracts/${sel.contractSlug}`}>{sel.subject}</Link>
             </div>
-            <div style={{ marginTop: 6, font: `400 9.5px/1.3 ${MONO}`, color: INK_SOFT }}>
+            <div className="ov-insp-parties">
               <Link to={`/authorities/${sel.authoritySlug}`}>{sel.authorityName}</Link>{' '}
-              <span style={{ color: ACCENT }}>→</span>{' '}
+              <span className="ov-accent">→</span>{' '}
               <Link to={`/companies/${sel.bidderSlug}`}>{sel.bidderName}</Link>
             </div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'flex-end',
-                gap: 16,
-                marginTop: 12,
-                flexWrap: 'wrap',
-              }}
-            >
+            <div className="ov-insp-figures">
               <div>
-                <div
-                  style={{ ...monoLabel, fontWeight: 400, letterSpacing: '.1em', fontSize: 8.5 }}
-                >
-                  При сключване
-                </div>
-                <div style={{ marginTop: 3, font: `400 15px/1 ${MONO}`, color: INK_MID }}>
-                  {money(sel.signingEur)}
-                </div>
+                <div className="ov-insp-fig-label">При сключване</div>
+                <div className="ov-insp-fig-val">{money(sel.signingEur)}</div>
               </div>
-              <div style={{ color: ACCENT, fontSize: 14, paddingBottom: 1 }}>→</div>
+              <div className="ov-insp-arrow">→</div>
               <div>
-                <div
-                  style={{ ...monoLabel, fontWeight: 400, letterSpacing: '.1em', fontSize: 8.5 }}
-                >
-                  Сега
-                </div>
-                <div style={{ marginTop: 3, font: `600 15px/1 ${MONO}`, color: INK }}>
-                  {money(sel.currentEur)}
-                </div>
+                <div className="ov-insp-fig-label">Сега</div>
+                <div className="ov-insp-fig-val now">{money(sel.currentEur)}</div>
               </div>
-              <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                <div style={{ font: `600 16px/1 ${MONO}`, color: ACCENT }}>
-                  +{money(sel.deltaEur)}
-                </div>
-                <div style={{ font: `400 9px/1 ${MONO}`, color: INK_SOFT, marginTop: 2 }}>
+              <div className="ov-insp-delta-wrap">
+                <div className="ov-insp-delta">+{money(sel.deltaEur)}</div>
+                <div className="ov-insp-delta-meta">
                   {signedPct(sel.pct)} · {count(sel.annexCount)} анекса
                 </div>
               </div>
             </div>
           </div>
-          <div style={{ padding: '12px 16px 14px' }}>
-            <div style={{ ...monoLabel, marginBottom: 6 }}>Детайли по договора</div>
-            <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.45, color: INK_MID }}>
-              Стойността при сключване{' '}
-              <strong style={{ color: INK }}>{money(sel.signingEur)}</strong> е нараснала до{' '}
-              <strong style={{ color: INK }}>{money(sel.currentEur)}</strong> чрез{' '}
-              {count(sel.annexCount)} анекса —{' '}
-              <span style={{ color: ACCENT }}>+{money(sel.deltaEur)}</span> ({signedPct(sel.pct)}).
-            </p>
-            <p style={{ marginTop: 12, font: `400 9.5px/1.5 ${MONO}`, color: INK_SOFT }}>
-              Историята на анексите и пълните детайли (процедура, CPV, срокове, ЕИК) са в{' '}
+          <div className="ov-insp-grid-wrap">
+            <div className="ov-mono-label ov-insp-grid-heading">Детайли по договора</div>
+            <dl className="ov-insp-grid">
+              {inspectorFields(sel).map((f) => (
+                <div className="ov-insp-grid-row" key={f.k}>
+                  <dt className="ov-insp-grid-key">{f.k}</dt>
+                  <dd className="ov-insp-grid-val">{f.v}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="ov-insp-foot">
+              Пълната история на анексите и документите по договора са в{' '}
               <Link to={`/contracts/${sel.contractSlug}`}>страницата на договора →</Link>
             </p>
           </div>
@@ -630,44 +501,31 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
           }
           hint="Дължината на лентата е сегашната стойност; тъмното е платеното при сключване, оранжевото — раздуването. Избери договор, за да го разгледаш в инспектора и в облака вдясно."
         >
-          <div className="flow-controls" role="group" aria-label="Подреждане">
-            <span className="muted">Подреди по:</span>{' '}
-            <Link
-              to={sortHref('absolute')}
-              aria-current={by === 'absolute' ? 'true' : undefined}
-              rel="nofollow"
-            >
-              абсолютно (€)
-            </Link>{' '}
-            ·{' '}
-            <Link
-              to={sortHref('percent')}
-              aria-current={by === 'percent' ? 'true' : undefined}
-              rel="nofollow"
-            >
-              процентно (%)
-            </Link>
-            <span
-              style={{
-                marginLeft: 'auto',
-                display: 'inline-flex',
-                gap: 16,
-                font: `400 10px/1 ${MONO}`,
-                color: INK_MID,
-              }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <span
-                  aria-hidden="true"
-                  style={{ width: 10, height: 10, background: INK, borderRadius: 1 }}
-                />
+          <div className="ov-sortbar" role="group" aria-label="Подреждане">
+            <span className="ov-sortbar-label">Подреди по</span>
+            <div className="ov-seg">
+              <Link
+                to={sortHref('absolute')}
+                aria-current={by === 'absolute' ? 'true' : undefined}
+                rel="nofollow"
+              >
+                абсолютно (€)
+              </Link>
+              <Link
+                to={sortHref('percent')}
+                aria-current={by === 'percent' ? 'true' : undefined}
+                rel="nofollow"
+              >
+                процентно (%)
+              </Link>
+            </div>
+            <span className="ov-legend">
+              <span className="ov-legend-item">
+                <span aria-hidden="true" className="ov-swatch ink" />
                 при сключване
               </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <span
-                  aria-hidden="true"
-                  style={{ width: 10, height: 10, background: ACCENT, borderRadius: 1 }}
-                />
+              <span className="ov-legend-item">
+                <span aria-hidden="true" className="ov-swatch accent" />
                 раздуване
               </span>
             </span>
@@ -676,13 +534,11 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
           {rows.length ? (
             <>
               <OverrunsDashboard key={by} rows={rows} />
-              <details style={{ marginTop: 'var(--s-4)' }}>
-                <summary
-                  style={{ cursor: 'pointer', font: `500 12px/1.4 ${MONO}`, color: INK_MID }}
-                >
+              <details className="ov-table-details">
+                <summary className="ov-table-summary">
                   Виж класацията като таблица ({count(rows.length)} договора)
                 </summary>
-                <div style={{ marginTop: 'var(--s-3)' }}>
+                <div className="ov-table-body">
                   <DataTable
                     columns={contractColumns}
                     rows={rows}
@@ -771,7 +627,7 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
           )}
         </Section>
 
-        <p className="small muted" style={{ marginTop: 'var(--s-3)' }}>
+        <p className="small muted ov-methodology">
           Раздуването е разликата между сегашната стойност и стойността при сключване, само за
           договори с поне един анекс и потвърдени стойности. Виж{' '}
           <Link to="/methodology#glossary">методологията</Link> за дефинициите.
