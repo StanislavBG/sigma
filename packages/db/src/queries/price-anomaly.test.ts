@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getCohortLabel,
   getCohortOutliers,
   getCohortStats,
   getPriceAnomalyKpis,
@@ -139,6 +140,57 @@ describe('getCohortStats', () => {
     const b = fakeDb({ stats: [statRaw()], samples: [] });
     await getCohortStats(b.db, { offset: -5, page: -2, limit: 10 });
     expect(b.bound[0]).toEqual([10, 0]);
+  });
+
+  it('filters to the selected codes via an IN-list and bypasses the pager (no LIMIT/OFFSET)', async () => {
+    const { db, sql, bound } = fakeDb({
+      stats: [statRaw({ code: '63712', label: 'Услуги, свързани с пътен транспорт' })],
+      samples: [{ code: '63712', value_eur: 7 }],
+    });
+
+    const rows = await getCohortStats(db, { codes: ['63712', '45000'] });
+
+    const statsSql = sql.find(isStats)!;
+    expect(statsSql).toContain('WHERE code IN (?, ?)');
+    expect(statsSql).not.toContain('LIMIT'); // the IN-list bounds the read; no pager
+    expect(bound[0]).toEqual(['63712', '45000']); // just the codes, no LIMIT/OFFSET
+    expect(rows[0]!.code).toBe('63712');
+    expect(rows[0]!.n).toBe(1200);
+    expect(rows[0]!.sample).toEqual([7]);
+  });
+});
+
+describe('getCohortLabel', () => {
+  it('returns the cohort label for a known 5-digit CPV', async () => {
+    const db = {
+      prepare(_sql: string) {
+        return {
+          bind() {
+            return this;
+          },
+          async first<T>() {
+            return { label: 'Услуги, свързани с пътен транспорт' } as T;
+          },
+        };
+      },
+    } as unknown as D1Database;
+    expect(await getCohortLabel(db, '63712')).toBe('Услуги, свързани с пътен транспорт');
+  });
+
+  it('returns null for a CPV with no cohort', async () => {
+    const db = {
+      prepare() {
+        return {
+          bind() {
+            return this;
+          },
+          async first<T>() {
+            return null as T;
+          },
+        };
+      },
+    } as unknown as D1Database;
+    expect(await getCohortLabel(db, '00000')).toBeNull();
   });
 });
 

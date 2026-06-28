@@ -94,6 +94,12 @@ export interface CohortStatsParams {
   offset?: number;
   /** 1-based page index — converted to an offset of (page − 1) × limit. */
   page?: number;
+  /**
+   * Restrict to these cohort codes (the selected CPV cohorts). When given, pagination is bypassed —
+   * the IN-list already bounds the result to the (few) selected codes, so the summary header can read
+   * a cohort's full stats even when it isn't on the current browse page.
+   */
+  codes?: string[];
 }
 
 export interface CohortOutliersParams {
@@ -153,24 +159,38 @@ interface SampleRaw {
  */
 export async function getCohortStats(
   db: D1Database,
-  { sort, limit, offset, page }: CohortStatsParams = {},
+  { sort, limit, offset, page, codes }: CohortStatsParams = {},
 ): Promise<CohortStatRow[]> {
   const capped = clampLimit(limit, DEFAULT_COHORT_LIMIT, MAX_COHORT_LIMIT);
+  // A `codes` filter (the selected cohorts) bypasses the LIMIT/OFFSET pager: the IN-list already bounds
+  // the read to the few selected codes, so a selected cohort that isn't on the current browse page still
+  // resolves to its full stats for the summary header. Otherwise it's the paginated browse read.
+  const filter = codes && codes.length > 0;
   const off = clampOffset(offset, page, capped);
-  const statsRes = await db
-    .prepare(
-      `SELECT code, label, n, median_eur, log_mad, outlier_count, inflated_share
-       FROM cpv_cohort_stats
-       ORDER BY ${cohortOrderBy(sort)}
-       LIMIT ? OFFSET ?`,
-    )
-    .bind(capped, off)
-    .all<StatRaw>();
+  const statsRes = filter
+    ? await db
+        .prepare(
+          `SELECT code, label, n, median_eur, log_mad, outlier_count, inflated_share
+           FROM cpv_cohort_stats
+           WHERE code IN (${codes!.map(() => '?').join(', ')})
+           ORDER BY ${cohortOrderBy(sort)}`,
+        )
+        .bind(...codes!)
+        .all<StatRaw>()
+    : await db
+        .prepare(
+          `SELECT code, label, n, median_eur, log_mad, outlier_count, inflated_share
+           FROM cpv_cohort_stats
+           ORDER BY ${cohortOrderBy(sort)}
+           LIMIT ? OFFSET ?`,
+        )
+        .bind(capped, off)
+        .all<StatRaw>();
 
-  const codes = statsRes.results.map((r) => r.code);
+  const pageCodes = statsRes.results.map((r) => r.code);
   const samplesByCode = new Map<string, number[]>();
-  if (codes.length > 0) {
-    const placeholders = codes.map(() => '?').join(', ');
+  if (pageCodes.length > 0) {
+    const placeholders = pageCodes.map(() => '?').join(', ');
     const sampleRes = await db
       .prepare(
         `SELECT code, value_eur
@@ -178,7 +198,7 @@ export async function getCohortStats(
          WHERE code IN (${placeholders})
          ORDER BY code, value_eur`,
       )
-      .bind(...codes)
+      .bind(...pageCodes)
       .all<SampleRaw>();
     for (const s of sampleRes.results) {
       const arr = samplesByCode.get(s.code);
@@ -273,6 +293,19 @@ export async function getCohortOutliers(
     cpvDescription: r.cpv_description ?? null,
     signedAt: r.signed_at ?? null,
   }));
+}
+
+/**
+ * The human label for a 5-digit CPV cohort — its modal cpv_description from the rollup. One indexed
+ * PK lookup, used to caption the /contracts ?cpv= drill-in. Returns null for a CPV that has no cohort
+ * (fewer than MIN_COHORT_SIZE priced contracts), so the caller falls back to showing the bare code.
+ */
+export async function getCohortLabel(db: D1Database, code: string): Promise<string | null> {
+  const row = await db
+    .prepare(`SELECT label FROM cpv_cohort_stats WHERE code = ?`)
+    .bind(code)
+    .first<{ label: string }>();
+  return row?.label ?? null;
 }
 
 /**
