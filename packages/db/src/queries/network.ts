@@ -212,7 +212,7 @@ export async function getEntityNetwork(
         .prepare(
           `SELECT authority_id, bidder_id, authority_name, bidder_name, bidder_kind, won_eur, contracts
            FROM flow_pairs WHERE ${neighborCol} IN (${placeholders}) AND ${centerCol} != ?
-           ORDER BY won_eur DESC LIMIT ?`,
+           ORDER BY won_eur DESC, ${neighborCol}, ${centerCol} LIMIT ?`,
         )
         .bind(...neighborIds, p.id, HOP2_SCAN)
         .all<PairRow>()

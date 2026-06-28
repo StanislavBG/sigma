@@ -485,7 +485,7 @@ export async function getOverrunsAnalytics(
          JOIN tenders t ON t.id = c.tender_id
          WHERE ${OVERRUN_WHERE}
          GROUP BY division
-         ORDER BY risk_eur DESC
+         ORDER BY risk_eur DESC, division
          LIMIT ?`,
       )
       .bind(secLimit)

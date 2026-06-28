@@ -231,7 +231,7 @@ async function topRecurringPairs(
     const { results } = await db
       .prepare(
         `SELECT authority_id, bidder_id, authority_name, bidder_name, bidder_kind, won_eur, contracts
-         FROM flow_pairs ORDER BY contracts DESC, won_eur DESC LIMIT ?`,
+         FROM flow_pairs ORDER BY contracts DESC, won_eur DESC, authority_id, bidder_id LIMIT ?`,
       )
       .bind(top)
       .all<PairRow>();
@@ -249,7 +249,7 @@ async function topRecurringPairs(
          JOIN bidders b ON b.id = c.bidder_id
          WHERE ${where.join(' AND ')}
          GROUP BY t.authority_id, c.bidder_id
-         ORDER BY contracts DESC, won_eur DESC LIMIT ?`,
+         ORDER BY contracts DESC, won_eur DESC, authority_id, bidder_id LIMIT ?`,
       )
       .bind(...s.params, top)
       .all<PairRow>();

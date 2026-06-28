@@ -38,7 +38,7 @@ async function topPairs(db: D1Database, p: FlowsParams, top: number): Promise<Pa
     const { results } = await db
       .prepare(
         `SELECT authority_id, bidder_id, authority_name, bidder_name, bidder_kind, won_eur, contracts
-         FROM flow_pairs ORDER BY won_eur DESC LIMIT ?`,
+         FROM flow_pairs ORDER BY won_eur DESC, authority_id, bidder_id LIMIT ?`,
       )
       .bind(top)
       .all<PairRow>();
@@ -63,7 +63,7 @@ async function topPairs(db: D1Database, p: FlowsParams, top: number): Promise<Pa
        FROM contracts c JOIN tenders t ON t.id = c.tender_id JOIN authorities a ON a.id = t.authority_id
        JOIN bidders b ON b.id = c.bidder_id
        WHERE ${where.join(' AND ')}
-       GROUP BY t.authority_id, c.bidder_id ORDER BY won_eur DESC LIMIT ?`,
+       GROUP BY t.authority_id, c.bidder_id ORDER BY won_eur DESC, authority_id, bidder_id LIMIT ?`,
     )
     .bind(...params, top)
     .all<PairRow>();

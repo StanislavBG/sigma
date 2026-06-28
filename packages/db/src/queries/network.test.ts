@@ -85,16 +85,20 @@ function fakeDb(): D1Database {
         async all<T>() {
           if (sql.includes('ORDER BY spent_eur')) return { results: PICKER_AUTH as T[] };
           if (sql.includes('FROM company_totals')) return { results: PICKER_COMP as T[] };
+          // hop-2 ring read: matched by the neighbour-id IN-list. Checked BEFORE the "won_eur DESC,
+          // <id>" markers because hop-2 now tiebreaks on the neighbour id too (ORDER BY won_eur DESC,
+          // <neighbour>, <centre>), so its SQL would otherwise also match the hop-1 marker below.
+          if (sql.includes('WHERE bidder_id IN') || sql.includes('WHERE authority_id IN'))
+            return { results: HOP2 as T[] };
           // The counterparties keyset query tiebreaks on the neighbour id column: for an authority
           // centre that is "won_eur DESC, bidder_id"; for a COMPANY centre it is "won_eur DESC,
           // authority_id" (the other ORDER BY the reviewer flagged as untested). The hop-1 graph read
-          // orders by "won_eur DESC LIMIT" (no id tiebreak).
+          // also tiebreaks "won_eur DESC, <neighbour>".
           if (sql.includes('won_eur DESC, authority_id'))
             return { results: COMP_COUNTERPARTIES as T[] };
           if (sql.includes('won_eur DESC, bidder_id')) return { results: HOP1 as T[] };
           if (sql.includes('FROM flow_pairs WHERE authority_id = ?'))
             return { results: HOP1 as T[] };
-          if (sql.includes('WHERE bidder_id IN')) return { results: HOP2 as T[] };
           return { results: [] as T[] };
         },
         async first<T>() {
