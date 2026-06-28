@@ -30,16 +30,20 @@ export function TrendComboChart({
   trendWindow,
   barRatio,
   ariaLabel,
+  partial = null,
 }: {
   points: DisplayPoint[];
   trendWindow: number;
   barRatio: number;
   ariaLabel: string;
+  // The current in-progress period's REAL partial value — plotted as a „до момента" hollow marker
+  // beside the projection (month view only). Null = don't show it.
+  partial?: { valueEur: number; contracts: number } | null;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const model = useMemo(
-    () => buildChartModel(points, { trendWindow, barRatio }),
-    [points, trendWindow, barRatio],
+    () => buildChartModel(points, { trendWindow, barRatio, partial }),
+    [points, trendWindow, barRatio, partial],
   );
   if (points.length < 2) return null;
 
@@ -252,6 +256,20 @@ export function TrendComboChart({
           </>
         )}
 
+        {/* „до момента" marker: the current period's real partial value beside the projection */}
+        {model.partialMarker && (
+          <circle
+            cx={model.partialMarker.x}
+            cy={model.partialMarker.yValue}
+            r={3.4}
+            fill="none"
+            style={{ stroke: 'var(--accent)' }}
+            strokeWidth={1.5}
+          >
+            <title>до момента (текущ период)</title>
+          </circle>
+        )}
+
         {/* hover crosshair + dot */}
         {hoverPt && (
           <>
@@ -302,9 +320,16 @@ export function TrendComboChart({
           </div>
           <div className="trend-tip-row is-first">
             <span className="trend-tip-sw-line" />
-            <span className="trend-tip-label">разходи</span>
+            <span className="trend-tip-label">{hoverData.forecast ? 'прогноза' : 'разходи'}</span>
             <span className="trend-tip-val">{money(hoverData.valueEur)}</span>
           </div>
+          {partial && hover === model.firstForecastIndex && (
+            <div className="trend-tip-row">
+              <span className="trend-tip-sw-hollow" />
+              <span className="trend-tip-label">до момента</span>
+              <span className="trend-tip-val">{money(partial.valueEur)}</span>
+            </div>
+          )}
           <div className="trend-tip-row">
             <span className="trend-tip-sw-box" />
             <span className="trend-tip-label">договори</span>

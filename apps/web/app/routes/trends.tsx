@@ -101,6 +101,14 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
   // and the methodology sentence below are all gated on this so we never describe an absent forecast.
   const hasForecast = useMemo(() => combined.some((p) => p.forecast), [combined]);
 
+  // The current in-progress month's real partial value — shown as the „до момента" marker beside the
+  // projection. Only in the default month view (periods map 1:1 with the chart's first-forecast slot).
+  const partialPoint = useMemo(() => data.points.find((p) => p.partial) ?? null, [data.points]);
+  const chartPartial =
+    !activeYear && step === 'month' && hasForecast && partialPoint
+      ? { valueEur: partialPoint.valueEur, contracts: partialPoint.contracts }
+      : null;
+
   // Default chart view is the last CHART_TRAILING_YEARS of actuals + the forecast tail — the early
   // ramp-up years (and any stray junk year) are trimmed so the curve reads cleanly. A year drill-down
   // shows that single year in full.
@@ -373,6 +381,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                     trendWindow={trendWindow}
                     barRatio={barRatio}
                     ariaLabel={ariaLabel}
+                    partial={chartPartial}
                   />
                 ) : (
                   <p className="muted trend-chart-empty">

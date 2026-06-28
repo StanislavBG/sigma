@@ -68,6 +68,10 @@ export interface ChartModel {
   todayX: number | null;
   points: ChartPointXY[];
   hits: ChartHit[];
+  // The current in-progress period plotted at its REAL partial value (the „до момента" marker), at the
+  // first-forecast x-slot — so the actual-so-far is shown alongside the projection. Null unless a
+  // partial value is supplied (month view only) and a forecast tail exists.
+  partialMarker: { x: number; yValue: number; yCount: number } | null;
 }
 
 const r1 = (v: number): number => Math.round(v * 10) / 10;
@@ -111,7 +115,12 @@ function niceCeil(value: number): number {
  */
 export function buildChartModel(
   pts: DisplayPoint[],
-  opts: { dims?: Partial<ChartDims>; trendWindow?: number; barRatio?: number } = {},
+  opts: {
+    dims?: Partial<ChartDims>;
+    trendWindow?: number;
+    barRatio?: number;
+    partial?: { valueEur: number; contracts: number } | null;
+  } = {},
 ): ChartModel {
   const dims: ChartDims = { ...DEFAULT_DIMS, ...opts.dims };
   const { width, height, plotTop, axisH, padL, padR } = dims;
@@ -222,6 +231,18 @@ export function buildChartModel(
     leftPct: width > 0 ? r1((geom[i]!.x / width) * 100) : 0,
   }));
 
+  // „До момента" marker: the in-progress period's real partial value, plotted at the first-forecast
+  // x-slot (the forecast's leading point shares that period). Month view only — the caller passes the
+  // partial value only when periods map 1:1; in quarter/year the current bucket already blends actual.
+  const partialMarker =
+    opts.partial && firstForecastIndex < n
+      ? {
+          x: r1(geom[firstForecastIndex]!.x),
+          yValue: r1(yL(opts.partial.valueEur)),
+          yCount: r1(yR(opts.partial.contracts)),
+        }
+      : null;
+
   // Per-point hover hit boxes spanning the midpoints to the neighbours.
   const hits: ChartHit[] = pts.map((_, i) => {
     const left = i === 0 ? 0 : (geom[i - 1]!.x + geom[i]!.x) / 2;
@@ -249,5 +270,6 @@ export function buildChartModel(
     todayX,
     points,
     hits,
+    partialMarker,
   };
 }

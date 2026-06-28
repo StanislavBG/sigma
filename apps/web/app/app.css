@@ -4497,6 +4497,13 @@ tbody td,
   display: inline-block;
   border-radius: 1px;
 }
+.trend-tip-sw-hollow {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  display: inline-block;
+}
 .trend-tip-label {
   font-size: 9px;
   opacity: 0.8;

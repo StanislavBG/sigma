@@ -72,4 +72,23 @@ describe('buildChartModel', () => {
     expect(m.gridLines[0]!.label).toBe('0');
     expect(m.rightTicks).toHaveLength(2);
   });
+
+  it('plots the „до момента" partial marker at the first-forecast slot, at the partial value', () => {
+    const m = buildChartModel(actualThenForecast, { partial: { valueEur: 12, contracts: 4 } });
+    expect(m.partialMarker).not.toBeNull();
+    expect(m.partialMarker!.x).toBe(m.points[m.firstForecastIndex]!.x);
+    // the lower partial value (12) sits lower on screen (larger y) than the projection (25) at that slot
+    expect(m.partialMarker!.yValue).toBeGreaterThan(m.points[m.firstForecastIndex]!.yValue);
+  });
+
+  it('omits the partial marker without a partial value or without a forecast tail', () => {
+    expect(buildChartModel(actualThenForecast).partialMarker).toBeNull();
+    const noForecast = [
+      pt({ key: 'a', valueEur: 10, contracts: 5 }),
+      pt({ key: 'b', valueEur: 20, contracts: 6 }),
+    ];
+    expect(
+      buildChartModel(noForecast, { partial: { valueEur: 5, contracts: 2 } }).partialMarker,
+    ).toBeNull();
+  });
 });
