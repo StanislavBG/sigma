@@ -329,7 +329,9 @@ function AnnexHistory({ annexes, contractSlug }: { annexes: AnnexEntry[]; contra
                 <span className="ov-annex-seq">Анекс {a.seq}</span>
                 <span className="ov-annex-date">{date(a.date)}</span>
                 <span className="ov-annex-delta">
-                  {a.deltaEur != null ? `+${money(a.deltaEur)}` : '—'}
+                  {/* money() already emits a minus for negatives; only prefix „+" for an increase so a
+                      reducing amendment reads „−100 €", not „+−100 €". */}
+                  {a.deltaEur != null ? `${a.deltaEur > 0 ? '+' : ''}${money(a.deltaEur)}` : '—'}
                 </span>
               </div>
               {a.reason ? <div className="ov-annex-reason">{a.reason}</div> : null}

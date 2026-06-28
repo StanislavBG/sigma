@@ -495,6 +495,17 @@ describe('getOverrunAnnexes', () => {
     expect(a!.deltaEur).toBe(300);
   });
 
+  it('keeps a reducing amendment negative (the history carries decreases too)', async () => {
+    const { db } = fakeAnnexDb([
+      annexRaw({ currency: 'EUR', value_before: 800, value_after: 700, value_delta: -100 }),
+    ]);
+
+    const [a] = await getOverrunAnnexes(db, ['c:123']);
+
+    // A negative delta — the route prefixes „+" only when deltaEur > 0, so this renders „−100 €".
+    expect(a!.deltaEur).toBe(-100);
+  });
+
   it('omits the EUR figure for a currency without an fx rate', async () => {
     const { db } = fakeAnnexDb([
       annexRaw({ currency: 'USD', value_before: 500, value_after: 800, value_delta: 300 }),

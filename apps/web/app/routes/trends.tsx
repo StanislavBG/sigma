@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Form, Link, useNavigation, useSearchParams, useSubmit } from 'react-router';
 import { count, date, money, pct, signedPct } from '@sigma/shared';
 import { CPV_SECTORS } from '@sigma/config';
@@ -142,15 +142,44 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
     : `${firstYear}–${lastYear} · ръст ${growthTxt}/год`;
   const chartTitle = activeYear ? `Разходи по месеци · ${activeYear}` : `Разходи по ${axisWord}`;
 
-  // Chart fullscreen: a modal overlay (per the design), not the native Fullscreen API — Esc closes it.
+  // Chart fullscreen: a modal overlay (per the design), not the native Fullscreen API.
   const [chartFull, setChartFull] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null); // the role="dialog" panel (focus trap scope)
+  const closeBtnRef = useRef<HTMLButtonElement>(null); // „✕ ЗАТВОРИ" — receives focus on open
+  const fsTriggerRef = useRef<HTMLButtonElement>(null); // „⤢ ЦЯЛ ЕКРАН" — focus returns here on close
+  // WCAG 2.4.3 / 2.1.2: move focus into the dialog on open, trap Tab within it while open, and restore
+  // focus to the trigger on close — Esc still closes. (The backdrop click also closes; React's effect
+  // cleanup runs on the chartFull→false transition and returns focus regardless of how it closed.)
   useEffect(() => {
     if (!chartFull) return;
+    closeBtnRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setChartFull(false);
+      if (e.key === 'Escape') {
+        setChartFull(false);
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = dialog.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      fsTriggerRef.current?.focus();
+    };
   }, [chartFull]);
   const ariaLabel = `Разходи за обществени поръчки и брой договори по ${axisWord}${
     activeYear ? `, ${activeYear} г.` : ''
@@ -173,15 +202,23 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
   const grandTotal = data.years.reduce((a, y) => a + y.valueEur, 0);
   const YOY_BAR_MAX = 2.8; // a +280% YoY fills the bar
 
-  // Analytical readouts for the KPI info popovers (all from the already-loaded figures).
-  const yearCount = data.years.length || 1;
-  const monthCount = data.points.length || 1;
-  const perYearValue = kpis.totalValueEur / yearCount;
-  const perYearContracts = kpis.contracts / yearCount;
+  // Analytical readouts for the KPI info popovers (all from the already-loaded figures). The „на
+  // година" / „типичен месец" baselines are computed over COMPLETE periods only — the partial current
+  // year (and its half-filled months) would otherwise drag the per-year average and the peak ratio
+  // down. partial flags come straight from the loader (getSpendingTrend marks the as_of period).
+  const completeYears = data.years.filter((y) => !y.partial);
+  const completeMonths = data.points.filter((p) => !p.partial);
+  const completeYearValue = completeYears.reduce((a, y) => a + y.valueEur, 0);
+  const completeYearContracts = completeYears.reduce((a, y) => a + y.contracts, 0);
+  const completeMonthValue = completeMonths.reduce((a, p) => a + p.valueEur, 0);
+  const perYearValue = completeYearValue / (completeYears.length || 1);
+  const perYearContracts = completeYearContracts / (completeYears.length || 1);
+  const typicalMonthValue = completeMonthValue / (completeMonths.length || 1);
   const peakRatio =
-    kpis.peak && kpis.totalValueEur > 0
-      ? kpis.peak.valueEur / (kpis.totalValueEur / monthCount)
-      : null;
+    kpis.peak && typicalMonthValue > 0 ? kpis.peak.valueEur / typicalMonthValue : null;
+  // The peak readout only asserts the year-end seasonality clause when the peak month really is Nov/Dec.
+  const peakMonth = kpis.peak ? Number(kpis.peak.period.slice(5, 7)) : null;
+  const peakIsYearEnd = peakMonth === 11 || peakMonth === 12;
 
   // Step toggle (МЕСЕЧНО/ТРИМЕСЕЧНО/ГОДИШНО) — rendered both in the filter bar and the fullscreen header.
   const stepToggle = (
@@ -278,7 +315,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                   summary="Месецът с най-висока сумарна стойност на сключени договори в периода."
                   readout={
                     peakRatio
-                      ? `${peakRatio.toFixed(1).replace('.', ',')}× над типичния месец — обикновено края на годината.`
+                      ? `${peakRatio.toFixed(1).replace('.', ',')}× над типичния месец${peakIsYearEnd ? ' — обикновено края на годината' : ''}.`
                       : undefined
                   }
                 />
@@ -357,6 +394,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
             )}
             {/* chart panel (modal overlay when fullscreen) */}
             <div
+              ref={dialogRef}
               className={`trend-panel trend-chart-panel${chartFull ? ' trend-chart-panel--full' : ''}`}
               role={chartFull ? 'dialog' : undefined}
               aria-modal={chartFull || undefined}
@@ -388,6 +426,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                     )}
                     {stepToggle}
                     <button
+                      ref={closeBtnRef}
                       type="button"
                       className="trend-fs-close"
                       onClick={() => setChartFull(false)}
@@ -406,6 +445,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                   <span className="trend-legend-meta">{chartMeta}</span>
                   {!chartFull && (
                     <button
+                      ref={fsTriggerRef}
                       type="button"
                       className="trend-fs-btn"
                       onClick={() => setChartFull(true)}
@@ -589,8 +629,8 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
               <>
                 {' '}
                 Участъкът „ПРОГНОЗА" е сезонна прогноза, изчислена от месечните данни (същият
-                календарен месец предходна година, умножен по средния годишен ръст {growthTxt}) — не
-                са реални договори.
+                календарен месец предходна година, умножен по типичния (медианен) годишен ръст{' '}
+                {growthTxt} за последните 3 пълни години) — не са реални договори.
               </>
             )}{' '}
             Виж методологията за подробности.

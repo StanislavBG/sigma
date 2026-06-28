@@ -58,9 +58,11 @@ const FORECAST_TRAILING_YEARS = 3;
  * Estimate the YoY growth multiplier (spend + contract count) from the actual monthly series.
  * Only complete years (12 non-partial months with a positive total) feed the estimate; the partial
  * final year and a partial first year are ignored so a half-year never skews the ratio. Of those, only
- * the last {@link FORECAST_TRAILING_YEARS} are used (the trailing window above). The factor is the
- * MEDIAN of the consecutive year ratios within that window — robust to a single blip year. Fewer than
- * two complete years → flat.
+ * the last {@link FORECAST_TRAILING_YEARS} are used (the trailing window above) — and this trailing
+ * window is what protects the projection from the early ramp-up years, not the median per se. The
+ * factor is the median of the consecutive year ratios within the window; at the default 3-year window
+ * there are only two ratios, so the median coincides with their mean (the median only adds robustness
+ * once the window is widened past three years). Fewer than two complete years → flat.
  */
 export function estimateYoyGrowth(points: TrendPoint[]): GrowthFactors {
   const byYear = new Map<
