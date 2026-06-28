@@ -4060,6 +4060,7 @@ tbody td,
 .trend-years thead th {
   padding: 7px 8px 6px;
   text-align: right;
+  border-bottom: 1px solid var(--ink);
 }
 .trend-years thead th:first-child {
   text-align: left;
