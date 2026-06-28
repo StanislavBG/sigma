@@ -4837,3 +4837,126 @@ tbody td,
   flex: 1;
 }
 /* ===== end chart-fullscreen ===== */
+
+/* ===== trends chart fullscreen modal ===== */
+.trend-fs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  padding: 5px 9px;
+  font: 500 9px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  color: var(--ink-mid);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.trend-fs-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.trend-fs-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklch, var(--ink) 50%, transparent);
+  backdrop-filter: blur(2px);
+  z-index: 55;
+}
+.trend-chart-panel--full {
+  position: fixed;
+  inset: 28px;
+  z-index: 60;
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 26px 30px 18px;
+  box-shadow: 0 40px 100px color-mix(in oklch, var(--ink) 40%, transparent);
+  display: flex;
+  flex-direction: column;
+}
+.trend-chart-panel--full .trend-chart-body {
+  flex: 1;
+  min-height: 0;
+}
+.trend-fs-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 18px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--rule);
+  flex: none;
+}
+.trend-fs-kicker {
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: 0.2em;
+  color: var(--accent);
+}
+.trend-fs-title {
+  margin-top: 9px;
+  font-family: var(--font-serif);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1;
+}
+.trend-fs-title em {
+  font-style: italic;
+  color: var(--accent);
+}
+.trend-fs-meta {
+  margin-top: 8px;
+  font: 400 11px/1 var(--font-mono);
+  color: var(--ink-mid);
+}
+.trend-fs-head-aside {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  flex: none;
+}
+.trend-fs-kpi {
+  text-align: right;
+}
+.trend-fs-kpi-v {
+  font: 600 26px/1 var(--font-mono);
+  color: var(--ink);
+}
+.trend-fs-kpi-v--accent {
+  color: var(--accent);
+}
+.trend-fs-kpi-l {
+  margin-top: 5px;
+  font: 500 8.5px/1 var(--font-mono);
+  letter-spacing: 0.14em;
+  color: var(--ink-soft);
+}
+.trend-fs-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  font: 500 10px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+@media (max-width: 720px) {
+  .trend-chart-panel--full {
+    inset: 10px;
+    padding: 16px;
+  }
+  .trend-fs-head-aside {
+    gap: 14px;
+  }
+  .trend-fs-title {
+    font-size: 22px;
+  }
+}
+/* ===== end trends chart fullscreen modal ===== */

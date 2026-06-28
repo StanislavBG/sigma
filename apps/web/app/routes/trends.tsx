@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Form, Link, useNavigation, useSearchParams, useSubmit } from 'react-router';
 import { count, date, money, pct, signedPct } from '@sigma/shared';
 import { CPV_SECTORS } from '@sigma/config';
@@ -7,7 +7,6 @@ import type { Route } from './+types/trends';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
 import { TrendComboChart } from '../components/TrendComboChart';
-import { FullscreenButton, useFullscreen } from '../components/FullscreenButton';
 import { Callout } from '../components/ui';
 import { publicCache } from '../lib/cache';
 import { buildForecast, estimateYoyGrowth } from '../lib/trends-forecast';
@@ -118,7 +117,17 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
     ? String(activeYear)
     : `${firstYear}–${lastYear} · ръст ${growthTxt}/год`;
   const chartTitle = activeYear ? `Разходи по месеци · ${activeYear}` : `Разходи по ${axisWord}`;
-  const chartFs = useFullscreen<HTMLDivElement>();
+
+  // Chart fullscreen: a modal overlay (per the design), not the native Fullscreen API — Esc closes it.
+  const [chartFull, setChartFull] = useState(false);
+  useEffect(() => {
+    if (!chartFull) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setChartFull(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [chartFull]);
   const ariaLabel = `Разходи за обществени поръчки и брой договори по ${axisWord}${
     activeYear ? `, ${activeYear} г.` : ''
   }. Колоните са броят договори, плътната линия е трендът на стойността, а пунктираният участък „ПРОГНОЗА" е сезонна прогноза. Точните стойности са в таблицата „По години" по-долу.`;
@@ -139,6 +148,37 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
   // Year table figures (share + average + YoY bar), all derived from the loader's per-year rows.
   const grandTotal = data.years.reduce((a, y) => a + y.valueEur, 0);
   const YOY_BAR_MAX = 2.8; // a +280% YoY fills the bar
+
+  // Step toggle (МЕСЕЧНО/ТРИМЕСЕЧНО/ГОДИШНО) — rendered both in the filter bar and the fullscreen header.
+  const stepToggle = (
+    <div role="group" aria-label="Стъпка на графиката" className="trend-steps">
+      {STEP_DEFS.map((s, i) => {
+        const on = step === s.key;
+        return (
+          <button
+            key={s.key}
+            type="button"
+            aria-pressed={on}
+            onClick={() => {
+              setStep(s.key);
+              setActiveYear(null);
+            }}
+            className="trend-step"
+            style={{
+              border: '1px solid var(--rule)',
+              borderLeftWidth: i === 0 ? 1 : 0,
+              borderRadius:
+                i === 0 ? '3px 0 0 3px' : i === STEP_DEFS.length - 1 ? '0 3px 3px 0' : 0,
+              background: on ? 'var(--ink)' : 'var(--paper)',
+              color: on ? 'var(--paper)' : 'var(--ink-mid)',
+            }}
+          >
+            {s.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <>
@@ -168,33 +208,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
 
         {/* filter bar: step toggle (client) + sector/funding (server) + active-year chip */}
         <div className="trend-filterbar">
-          <div role="group" aria-label="Стъпка на графиката" className="trend-steps">
-            {STEP_DEFS.map((s, i) => {
-              const on = step === s.key;
-              return (
-                <button
-                  key={s.key}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => {
-                    setStep(s.key);
-                    setActiveYear(null);
-                  }}
-                  className="trend-step"
-                  style={{
-                    border: '1px solid var(--rule)',
-                    borderLeftWidth: i === 0 ? 1 : 0,
-                    borderRadius:
-                      i === 0 ? '3px 0 0 3px' : i === STEP_DEFS.length - 1 ? '0 3px 3px 0' : 0,
-                    background: on ? 'var(--ink)' : 'var(--paper)',
-                    color: on ? 'var(--paper)' : 'var(--ink-mid)',
-                  }}
-                >
-                  {s.label}
-                </button>
-              );
-            })}
-          </div>
+          {stepToggle}
 
           <Form
             method="get"
@@ -253,16 +267,73 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
         {/* main grid */}
         <div className="trend-grid">
           <div className="trend-col">
-            {/* chart panel */}
-            <div className="trend-panel trend-chart-panel" ref={chartFs.ref}>
+            {chartFull && (
+              <div
+                className="trend-fs-backdrop"
+                aria-hidden="true"
+                onClick={() => setChartFull(false)}
+              />
+            )}
+            {/* chart panel (modal overlay when fullscreen) */}
+            <div
+              className={`trend-panel trend-chart-panel${chartFull ? ' trend-chart-panel--full' : ''}`}
+              role={chartFull ? 'dialog' : undefined}
+              aria-modal={chartFull || undefined}
+              aria-label={chartFull ? `${chartTitle} — на цял екран` : undefined}
+            >
+              {chartFull && (
+                <div className="trend-fs-head">
+                  <div className="trend-fs-head-main">
+                    <div className="trend-fs-kicker">— ТРЕНД ВЪВ ВРЕМЕТО · ЦЯЛ ЕКРАН</div>
+                    <div className="trend-fs-title">
+                      Разходи по <em>{axisWord}</em>
+                    </div>
+                    <div className="trend-fs-meta">{chartMeta}</div>
+                  </div>
+                  <div className="trend-fs-head-aside">
+                    <div className="trend-fs-kpi">
+                      <div className="trend-fs-kpi-v">{money(kpis.totalValueEur)}</div>
+                      <div className="trend-fs-kpi-l">ОБЩО ЗА ПЕРИОДА</div>
+                    </div>
+                    {kpis.peak && (
+                      <div className="trend-fs-kpi">
+                        <div className="trend-fs-kpi-v trend-fs-kpi-v--accent">
+                          {money(kpis.peak.valueEur)}
+                        </div>
+                        <div className="trend-fs-kpi-l">
+                          ПИК · {shortMonthLabel(kpis.peak.period)}
+                        </div>
+                      </div>
+                    )}
+                    {stepToggle}
+                    <button
+                      type="button"
+                      className="trend-fs-close"
+                      onClick={() => setChartFull(false)}
+                    >
+                      ✕ ЗАТВОРИ
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="trend-panel-head">
-                <h2 className="trend-panel-title">{chartTitle}</h2>
+                {!chartFull && <h2 className="trend-panel-title">{chartTitle}</h2>}
                 <div className="trend-legend">
                   <LegendItem swatch={<Swatch box />}>договори</LegendItem>
                   <LegendItem swatch={<Swatch line />}>тренд €</LegendItem>
                   {hasForecast && <LegendItem swatch={<Swatch dashed />}>прогноза</LegendItem>}
                   <span className="trend-legend-meta">{chartMeta}</span>
-                  <FullscreenButton active={chartFs.isFullscreen} onToggle={chartFs.toggle} />
+                  {!chartFull && (
+                    <button
+                      type="button"
+                      className="trend-fs-btn"
+                      onClick={() => setChartFull(true)}
+                      aria-label="Разгледай графиката на цял екран"
+                      title="Цял екран"
+                    >
+                      ⤢ ЦЯЛ ЕКРАН
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="trend-chart-body">
