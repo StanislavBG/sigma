@@ -7,10 +7,12 @@ import { getMulti } from '../lib/filters';
 export async function loader({ request, context }: Route.LoaderArgs) {
   const sp = new URL(request.url).searchParams;
   const sort = normalizeContractSort(sp.get('sort'));
+  const cpvRaw = sp.get('cpv');
   const params = {
     sort,
     years: getMulti(sp, 'year'),
     sectors: getMulti(sp, 'sector'),
+    cpv: cpvRaw && /^\d{5}$/.test(cpvRaw) ? cpvRaw : null,
     procedureGroups: getMulti(sp, 'procedure'),
     valueBucket: sp.get('value'),
     eu: (sp.get('eu') as 'eu' | 'national' | null) || null,

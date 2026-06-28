@@ -9,6 +9,7 @@ export const CACHE_QUERY_PARAMS = new Set([
   'center',
   'cohort', // /price-anomaly — selected CPV cohorts (repeatable); faceting changes the result set
   'count',
+  'cpv', // /contracts — exact 5-digit CPV filter; changes the result set + headline totals
   'cursor',
   'eu',
   'funding',

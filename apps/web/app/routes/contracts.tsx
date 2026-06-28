@@ -2,6 +2,7 @@ import { Link, useNavigation, useSearchParams } from 'react-router';
 import { count, date, money, moneyBare } from '@sigma/shared';
 import {
   contractsSummary,
+  getCohortLabel,
   getContractFacets,
   listContracts,
   normalizeContractSort,
@@ -49,10 +50,15 @@ export function headers() {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const sp = new URL(request.url).searchParams;
+  // Validate ?cpv to exactly 5 digits before it reaches a filter/cache key — a malformed value is
+  // dropped (so it can't mint unbounded distinct edge-cache keys nor poison the result set).
+  const cpvRaw = sp.get('cpv');
+  const cpv = cpvRaw && /^\d{5}$/.test(cpvRaw) ? cpvRaw : null;
   const params = {
     sort: normalizeContractSort(sp.get('sort')),
     years: getMulti(sp, 'year'),
     sectors: getMulti(sp, 'sector'),
+    cpv,
     procedureGroups: getMulti(sp, 'procedure'),
     valueBucket: sp.get('value'),
     eu: (sp.get('eu') as 'eu' | 'national' | null) || null,
@@ -66,17 +72,19 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
   // Page `Cache-Control` (publicCache(1800)) memoises full responses at the edge — no per-query cache.
   return withDbRetry(async () => {
-    const [summary, facets] = await Promise.all([
+    const [summary, facets, cpvLabel] = await Promise.all([
       contractsSummary(env.DB, params),
       getContractFacets(env.DB),
+      // Caption for the active-CPV indicator — only a cheap PK lookup, and only when a CPV is set.
+      cpv ? getCohortLabel(env.DB, cpv) : Promise.resolve(null),
     ]);
     const result = await listContracts(env.DB, params, summary);
-    return { result, facets };
+    return { result, facets, cpv, cpvLabel };
   });
 }
 
 export default function Contracts({ loaderData }: Route.ComponentProps) {
-  const { result, facets } = loaderData;
+  const { result, facets, cpv, cpvLabel } = loaderData;
   const [sp] = useSearchParams();
   const sort = sp.get('sort') ?? 'value-desc';
   const nav = pageNav({
@@ -171,6 +179,19 @@ export default function Contracts({ loaderData }: Route.ComponentProps) {
                 </>
               }
             />
+
+            {cpv && (
+              <p className="active-filters">
+                Категория <strong>CPV {cpv}</strong>
+                {cpvLabel ? (
+                  <>
+                    : <strong>{cpvLabel}</strong>
+                  </>
+                ) : null}{' '}
+                · <strong>{count(result.total)}</strong> договора ·{' '}
+                <Link to={withParams(sp, { cpv: null, cursor: null, page: null })}>изчисти</Link>
+              </p>
+            )}
 
             {filtered && (
               <p className="active-filters">
