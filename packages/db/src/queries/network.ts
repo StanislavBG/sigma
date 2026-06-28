@@ -176,7 +176,7 @@ export async function getEntityNetwork(
     db
       .prepare(
         `SELECT authority_id, bidder_id, authority_name, bidder_name, bidder_kind, won_eur, contracts
-         FROM flow_pairs WHERE ${centerCol} = ? ORDER BY won_eur DESC LIMIT ?`,
+         FROM flow_pairs WHERE ${centerCol} = ? ORDER BY won_eur DESC, ${neighborCol} LIMIT ?`,
       )
       .bind(p.id, HOP1)
       .all<PairRow>(),
