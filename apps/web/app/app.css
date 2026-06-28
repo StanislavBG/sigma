@@ -5427,33 +5427,38 @@ tbody td,
   display: inline-flex;
   vertical-align: middle;
 }
+/* ≥24px hit area via padding, pulled back with negative margin so the inline layout doesn't shift. */
 .metric-info-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 13px;
-  height: 13px;
-  margin-left: 5px;
+  width: 24px;
+  height: 24px;
+  margin: -6px -5px -6px 1px;
   padding: 0;
-  border: 1px solid var(--rule);
-  border-radius: 50%;
+  border: none;
   background: transparent;
   color: var(--ink-soft);
-  font:
-    600 8px/1 'IBM Plex Mono',
-    var(--font-mono);
-  font-style: italic;
   cursor: help;
   flex: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.metric-info-btn:hover,
-.metric-info:focus-within .metric-info-btn {
+.metric-info-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
+.metric-info-btn:hover .metric-info-glyph,
+.metric-info:focus-within .metric-info-btn .metric-info-glyph,
+.metric-info.is-open .metric-info-btn .metric-info-glyph {
   color: var(--accent);
-  border-color: var(--accent);
 }
 .metric-info-btn:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: -3px;
+  border-radius: 50%;
 }
 .metric-info-pop {
   position: absolute;
@@ -5486,7 +5491,8 @@ tbody td,
   right: 0;
 }
 .metric-info:hover .metric-info-pop,
-.metric-info:focus-within .metric-info-pop {
+.metric-info:focus-within .metric-info-pop,
+.metric-info.is-open .metric-info-pop {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
