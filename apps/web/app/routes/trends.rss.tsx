@@ -28,7 +28,15 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     }),
   );
   const lastBuildDate = rfc822(result.items[0]?.signedAt) ?? new Date().toUTCString();
-  const body = buildContractsRss(result.items, { lastBuildDate });
+  // Re-derive the query from the *validated* filters only (a bogus ?sector is dropped), so a filtered
+  // subscription's self/channel URLs advertise exactly the slice it serves — not the global feed.
+  const feedQuery = new URLSearchParams();
+  if (validSector) feedQuery.set('sector', validSector);
+  if (funding) feedQuery.set('funding', funding);
+  const body = buildContractsRss(result.items, {
+    lastBuildDate,
+    query: feedQuery.toString() || undefined,
+  });
   return new Response(body, {
     headers: {
       'Content-Type': 'application/rss+xml; charset=utf-8',

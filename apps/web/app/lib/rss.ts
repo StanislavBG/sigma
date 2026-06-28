@@ -8,9 +8,17 @@ import { money } from '@sigma/shared';
 // so they must not depend on the request host — staging/preview hosts would poison subscriptions).
 export const FEED_BASE = 'https://sigma.midt.bg';
 
-/** Escape the five XML predefined entities. Applied to every interpolated text node and attribute. */
+/**
+ * Escape the five XML predefined entities, after stripping characters that XML 1.0 forbids outright.
+ * Dirty registry free-text can carry C0 control bytes (0x00–0x08, 0x0B, 0x0C, 0x0E–0x1F); tab, LF and
+ * CR are the only control chars XML 1.0 permits, so the rest are dropped — otherwise a single stray
+ * byte makes the whole feed fail to parse. Applied to every interpolated text node and attribute.
+ */
 export function xmlEscape(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
+  // Strip the C0 control bytes XML 1.0 forbids (tab/LF/CR excepted) before escaping the entities.
+  // eslint-disable-next-line no-control-regex
+  const clean = s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+  return clean.replace(/[&<>"']/g, (c) =>
     c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&apos;',
   );
 }
@@ -41,16 +49,22 @@ function item(c: ContractListItem): string {
   return `<item>${parts.join('')}</item>`;
 }
 
-/** Build a complete, well-formed RSS 2.0 document for the newest contracts. */
+/**
+ * Build a complete, well-formed RSS 2.0 document for the newest contracts. When the feed is filtered
+ * (`?sector=…&funding=…`), pass that query string as `query` so the channel `<link>` and the
+ * `atom:link rel="self"` carry it too — a filtered subscription must not self-identify as the global
+ * feed.
+ */
 export function buildContractsRss(
   items: ContractListItem[],
-  opts?: { base?: string; lastBuildDate?: string | null },
+  opts?: { base?: string; lastBuildDate?: string | null; query?: string },
 ): string {
   const base = opts?.base ?? FEED_BASE;
+  const qs = opts?.query ? `?${opts.query}` : '';
   const channel = [
     `<title>СИГМА — Най-нови договори</title>`,
-    `<link>${xmlEscape(`${base}/trends`)}</link>`,
-    `<atom:link href="${xmlEscape(`${base}/trends.rss`)}" rel="self" type="application/rss+xml" />`,
+    `<link>${xmlEscape(`${base}/trends${qs}`)}</link>`,
+    `<atom:link href="${xmlEscape(`${base}/trends.rss${qs}`)}" rel="self" type="application/rss+xml" />`,
     `<description>${xmlEscape('Най-новите сключени договори по обществени поръчки в България.')}</description>`,
     `<language>bg</language>`,
   ];

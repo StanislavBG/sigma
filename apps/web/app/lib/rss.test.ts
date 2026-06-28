@@ -71,6 +71,18 @@ describe('buildContractsRss', () => {
     expect(/&(?!amp;|lt;|gt;|quot;|apos;)/.test(xml)).toBe(false);
   });
 
+  it('threads an active filter query into the channel link and atom self href', () => {
+    const xml = buildContractsRss([makeItem()], { query: 'sector=45&funding=eu' });
+    expect(xml).toContain(`<link>${FEED_BASE}/trends?sector=45&amp;funding=eu</link>`);
+    expect(xml).toContain(`href="${FEED_BASE}/trends.rss?sector=45&amp;funding=eu"`);
+  });
+
+  it('uses the bare base for the unfiltered feed (no query suffix)', () => {
+    const xml = buildContractsRss([makeItem()]);
+    expect(xml).toContain(`<link>${FEED_BASE}/trends</link>`);
+    expect(xml).toContain(`href="${FEED_BASE}/trends.rss"`);
+  });
+
   it('links and guids are absolute against the public base', () => {
     const xml = buildContractsRss([makeItem({ id: 'xyz' })]);
     expect(xml).toContain(`<link>${FEED_BASE}/contracts/xyz</link>`);
@@ -105,5 +117,11 @@ describe('rfc822', () => {
 describe('xmlEscape', () => {
   it('escapes all five predefined entities', () => {
     expect(xmlEscape(`& < > " '`)).toBe('&amp; &lt; &gt; &quot; &apos;');
+  });
+
+  it('strips XML-1.0-illegal control chars but keeps tab/newline/carriage-return', () => {
+    const dirty = `a\u0000b\u0008c\u000Bd\u000Ce\u001Ff`;
+    expect(xmlEscape(dirty)).toBe('abcdef');
+    expect(xmlEscape('x\ty\nz\r')).toBe('x\ty\nz\r');
   });
 });
