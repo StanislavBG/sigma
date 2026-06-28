@@ -71,6 +71,33 @@ describe('listContracts', () => {
       listContracts(fakeDb(), { valueBucket: 'toString', pageSize: 10 }),
     ).resolves.toBeDefined();
   });
+
+  it('filters to an exact 5-digit CPV via substr(t.cpv_code, 1, 5) = ?', async () => {
+    const seen: { sql: string[]; bound: unknown[][] } = { sql: [], bound: [] };
+    const db = {
+      prepare(sql: string) {
+        seen.sql.push(sql);
+        return {
+          bind(...args: unknown[]) {
+            seen.bound.push(args);
+            return this;
+          },
+          async all<T>() {
+            return { results: [contractRow] as T[] };
+          },
+          async first<T>() {
+            return { total: 1, eur: 1000, suspect: 0 } as T;
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    await listContracts(db, { cpv: '63712', pageSize: 10 });
+
+    const listSql = seen.sql.find((s) => s.includes('LIMIT ?'))!;
+    expect(listSql).toContain('substr(t.cpv_code, 1, 5) = ?');
+    expect(seen.bound.some((b) => b.includes('63712'))).toBe(true);
+  });
 });
 
 describe('getContractFacets', () => {

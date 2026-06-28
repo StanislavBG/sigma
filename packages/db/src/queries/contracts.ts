@@ -16,6 +16,8 @@ export interface ContractListParams {
   sort?: ContractSort;
   years?: string[];
   sectors?: string[];
+  /** Exact 5-digit CPV cohort (substr(cpv_code,1,5)) — the price-anomaly „виж всички договори" drill-in. */
+  cpv?: string | null;
   procedureGroups?: string[];
   valueBucket?: string | null;
   eu?: 'eu' | 'national' | null;
@@ -30,6 +32,7 @@ export interface ContractListParams {
 export const CONTRACT_FILTER_KEYS = [
   'years',
   'sectors',
+  'cpv',
   'procedureGroups',
   'valueBucket',
   'eu',
@@ -127,6 +130,10 @@ function buildFilters(p: ContractListParams): { sql: string; params: unknown[] }
     where.push(`substr(t.cpv_code, 1, 2) IN (${qs(p.sectors.length)})`);
     params.push(...p.sectors);
   }
+  if (p.cpv) {
+    where.push(`substr(t.cpv_code, 1, 5) = ?`);
+    params.push(p.cpv);
+  }
   if (p.procedureGroups?.length) {
     const types = p.procedureGroups.flatMap(
       (k) => PROCEDURE_GROUPS.find((g) => g.key === k)?.types ?? [],
@@ -174,6 +181,7 @@ function contractFilterSignature(p: ContractListParams): string {
   const filters = {
     years: p.years,
     sectors: p.sectors,
+    cpv: p.cpv ?? null,
     procedureGroups: p.procedureGroups,
     valueBucket: p.valueBucket,
     eu: p.eu,
