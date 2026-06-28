@@ -12,6 +12,7 @@ export default [
   route('competition', 'routes/competition.tsx'),
   route('compare', 'routes/compare.tsx'),
   route('overruns', 'routes/overruns.tsx'),
+  route('price-anomaly', 'routes/price-anomaly.tsx'),
   route('analytics', 'routes/analytics.tsx'),
   route('companies', 'routes/companies.tsx'),
   route('companies.csv', 'routes/companies.csv.tsx'),
