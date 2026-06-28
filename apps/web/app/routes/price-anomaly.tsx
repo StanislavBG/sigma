@@ -1,5 +1,7 @@
 import { Link, useNavigation, useSearchParams } from 'react-router';
 import { count, money, moneyBare } from '@sigma/shared';
+// 10 cohort rows per page — the full-width browse table is paginated rather than scrolled.
+const PAGE_SIZE = 10;
 import {
   type CohortOutlierRow,
   type CohortSort,
@@ -48,19 +50,23 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   // Repeatable `?cohort=CODE` — the selected CPV cohorts that facet the V4 scorecards. Shareable, SSR,
   // works with no JS. De-duplicate so a doubled param can't widen the IN-list.
   const selected = [...new Set(sp.getAll('cohort').filter(Boolean))];
+  const requestedPage = Math.max(1, Number(sp.get('page') ?? '1') || 1);
   const db = context.cloudflare.env.DB;
   return withDbRetry(async () => {
-    // FOUR bounded statements, no duplicate COUNT:
-    //   1) getPriceAnomalyKpis — one round trip (two scalar subqueries over the small rollups).
-    //   2) getCohortStats — the cohort-browse rows (ORDER BY whitelisted sort, LIMIT 50) + ONE IN-list
-    //      sample query for only those codes.  (= 2 statements)
-    //   3) getCohortOutliers — the flagged contracts, optionally faceted to `selected`, mult DESC, LIMIT.
-    const [kpis, cohorts, outliers] = await Promise.all([
-      getPriceAnomalyKpis(db),
-      getCohortStats(db, { sort }),
+    // KPIs first (one cheap round trip): cohortCount drives the pager, so the page is clamped to the
+    // real range before the LIMIT/OFFSET read — an out-of-range ?page can't yield a misleading empty list.
+    const kpis = await getPriceAnomalyKpis(db);
+    const pageCount = Math.max(1, Math.ceil(kpis.cohortCount / PAGE_SIZE));
+    const page = Math.min(requestedPage, pageCount);
+    // Then two parallel bounded reads, no duplicate COUNT:
+    //   1) getCohortStats — the page's 10 cohort-browse rows (ORDER BY whitelisted sort, LIMIT/OFFSET) +
+    //      ONE IN-list sample query for only those page codes.  (= 2 statements)
+    //   2) getCohortOutliers — the flagged contracts, optionally faceted to `selected`, mult DESC, LIMIT.
+    const [cohorts, outliers] = await Promise.all([
+      getCohortStats(db, { sort, page, limit: PAGE_SIZE }),
       getCohortOutliers(db, { codes: selected.length ? selected : undefined }),
     ]);
-    return { kpis, cohorts, outliers, sort, selected };
+    return { kpis, cohorts, outliers, sort, selected, page, pageCount };
   });
 }
 
@@ -71,7 +77,7 @@ const SORT_TABS: { key: CohortSort; label: string }[] = [
   { key: 'n', label: 'ДОГОВОРИ' },
 ];
 
-// ── V2 — cohort browse table ──────────────────────────────────────────────────────────────────────
+// ── Cohort browse — ONE full-width paginated table: stats + the inline distribution strip per row ─────
 function CohortBrowse({
   cohorts,
   selected,
@@ -86,8 +92,10 @@ function CohortBrowse({
   sortHref: (sort: CohortSort) => string;
 }) {
   const maxShare = Math.max(0.0001, ...cohorts.map((c) => c.inflatedShare));
+  // Shared log scale recomputed over the visible page's rows, so the strips on this page are comparable.
+  const { min, max } = sharedDomain(cohorts);
   return (
-    <section className="pa-panel" aria-labelledby="pa-browse-h">
+    <section className="pa-panel pa-browse" aria-labelledby="pa-browse-h">
       <div className="pa-panel-head">
         <div>
           <div className="pa-kicker">— Избери категория</div>
@@ -108,18 +116,52 @@ function CohortBrowse({
           ))}
         </div>
       </div>
-      <div className="pa-browse-headrow" aria-hidden="true">
+      <div className="pa-browse-headrow">
         <span>CPV</span>
         <span>КАТЕГОРИЯ</span>
-        <span className="pa-r">ТИПИЧНА</span>
-        <span className="pa-r">ДОГОВ.</span>
-        <span className="pa-r">АНОМ.</span>
-        <span>РАЗДУТ ДЯЛ</span>
+        <span className="pa-th pa-th-r">
+          ТИПИЧНА
+          <MetricInfo
+            title="Типична цена"
+            summary="Типичната цена в тази категория: подредени по стойност, това е тази по средата — половината договори са по-евтини, половината по-скъпи."
+          />
+        </span>
+        <span className="pa-th pa-th-r">
+          ДОГОВ.
+          <MetricInfo
+            title="Договори"
+            summary="Колко договора има в категорията за целия период."
+          />
+        </span>
+        <span className="pa-th pa-th-r">
+          АНОМ.
+          <MetricInfo
+            title="Аномалии"
+            summary="Колко договора са маркирани като необичайно скъпи спрямо сходните си по време (±1 година)."
+          />
+        </span>
+        <span className="pa-th pa-th-share">
+          РАЗДУТ ДЯЛ
+          <MetricInfo
+            align="end"
+            title="Раздут дял"
+            summary="Каква част от парите в категорията са в маркираните договори — по стойност, не по брой."
+          />
+        </span>
+        <span className="pa-th pa-th-strip">
+          РАЗПРЕДЕЛЕНИЕ
+          <MetricInfo
+            align="end"
+            title="Разпределение"
+            summary="Всяка точка е договор, подреден по стойност (вляво евтини, вдясно скъпи). Линията е типичната цена; маркираните със скъпо изпъкване са оцветени."
+          />
+        </span>
       </div>
-      <ul className="scrolly pa-browse-list">
+      <ul className="pa-browse-list">
         {cohorts.map((c) => {
           const on = selected.includes(c.code);
           const sharePct = Math.round(c.inflatedShare * 100);
+          const strip = cohortStripGeometry(c.sample, c.medianEur, min, max);
           return (
             <li key={c.code}>
               <Link
@@ -142,107 +184,41 @@ function CohortBrowse({
                   </span>
                   <span className="pa-share-pct">{sharePct}%</span>
                 </span>
+                <span className="pa-browse-strip">
+                  <svg
+                    viewBox="0 0 360 32"
+                    className="pa-strip"
+                    role="img"
+                    aria-label={`Разпределение на стойностите за сходни поръчки от категория ${c.code} ${c.label}: ${count(c.n)} договора, типична стойност ${moneyBare(c.medianEur)}, ${count(c.outlierCount)} маркирани за проверка.`}
+                  >
+                    <line x1="6" y1="16" x2="354" y2="16" className="pa-strip-axis" />
+                    {strip.dots.map((d, i) => (
+                      <circle
+                        key={i}
+                        cx={d.x}
+                        cy={d.y}
+                        r={d.r}
+                        className={d.big ? 'pa-dot is-big' : 'pa-dot'}
+                      />
+                    ))}
+                    <line x1={strip.medX} y1="4" x2={strip.medX} y2="28" className="pa-strip-med" />
+                  </svg>
+                </span>
               </Link>
             </li>
           );
         })}
       </ul>
-    </section>
-  );
-}
-
-// ── V3 — per-cohort distribution strips (shared log scale) ──────────────────────────────────────────
-function DistributionStrips({
-  cohorts,
-  selected,
-  cohortHref,
-}: {
-  cohorts: CohortStatRow[];
-  selected: string[];
-  cohortHref: (code: string) => string;
-}) {
-  const { min, max } = sharedDomain(cohorts);
-  // Shared log10 ticks across the whole strip column, so the x positions read against one scale.
-  const tickVals = [1e3, 1e4, 1e5, 1e6, 1e7, 1e8].filter((v) => v >= min / 10 && v <= max * 10);
-  const lo = Math.log10(Math.max(1, min));
-  const span = Math.log10(Math.max(min * 10, max)) - lo || 1;
-  const tickX = (v: number) => 6 + ((Math.log10(v) - lo) / span) * (360 - 12);
-  return (
-    <section className="pa-panel" aria-labelledby="pa-dist-h">
-      <div className="pa-panel-head pa-panel-head--col">
-        <div className="pa-kicker">— Една обща скала · избери ред</div>
-        <h2 id="pa-dist-h" className="pa-panel-title">
-          Разпределение по <em>категории</em>
-        </h2>
-      </div>
-      <div className="pa-dist-body">
-        {cohorts.map((c) => {
-          const on = selected.includes(c.code);
-          const strip = cohortStripGeometry(c.sample, c.medianEur, min, max);
-          return (
-            <Link
-              key={c.code}
-              to={cohortHref(c.code)}
-              rel="nofollow"
-              aria-pressed={on}
-              className={on ? 'pa-dist-row is-on' : 'pa-dist-row'}
-            >
-              <span className="pa-dist-box" aria-hidden="true">
-                {on ? '✓' : ''}
-              </span>
-              <span className="pa-dist-meta">
-                <span className="clamp1 pa-dist-name">{c.label}</span>
-                <span className="pa-dist-sub">
-                  типична {moneyBare(c.medianEur)} · {count(c.n)} договора
-                </span>
-              </span>
-              <svg
-                viewBox="0 0 360 32"
-                className="pa-strip"
-                role="img"
-                aria-label={`Разпределение на стойностите за сходни поръчки от категория ${c.code} ${c.label}: ${count(c.n)} договора, типична стойност ${moneyBare(c.medianEur)}, ${count(c.outlierCount)} маркирани за проверка.`}
-              >
-                <line x1="6" y1="16" x2="354" y2="16" className="pa-strip-axis" />
-                {strip.dots.map((d, i) => (
-                  <circle
-                    key={i}
-                    cx={d.x}
-                    cy={d.y}
-                    r={d.r}
-                    className={d.big ? 'pa-dot is-big' : 'pa-dot'}
-                  />
-                ))}
-                <line x1={strip.medX} y1="4" x2={strip.medX} y2="28" className="pa-strip-med" />
-              </svg>
-            </Link>
-          );
-        })}
-        {tickVals.length > 0 && (
-          <div className="pa-dist-axis">
-            <span />
-            <svg viewBox="0 0 360 18" className="pa-strip" aria-hidden="true">
-              {tickVals.map((v) => (
-                <g key={v}>
-                  <line x1={tickX(v)} y1="0" x2={tickX(v)} y2="4" className="pa-strip-tick" />
-                  <text x={tickX(v)} y="14" textAnchor="middle" className="pa-strip-ticktext">
-                    {moneyBare(v)}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        )}
-      </div>
-      <div className="pa-dist-legend">
+      <div className="pa-browse-legend">
         <span className="pa-legend-item">
           <span aria-hidden="true" className="pa-legend-med" />
-          типична стойност
+          типична цена
         </span>
         <span className="pa-legend-item">
           <span aria-hidden="true" className="pa-legend-big" />
-          аномалия ≥5× над типичната
+          маркиран ≥5× над типичната
         </span>
-        <span className="pa-dist-selcount">
+        <span className="pa-browse-selcount">
           избор · {selected.length ? `${count(selected.length)} избрани` : 'няма'}
         </span>
       </div>
@@ -462,7 +438,7 @@ function Methodology() {
 }
 
 export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
-  const { kpis, cohorts, outliers, sort, selected } = loaderData;
+  const { kpis, cohorts, outliers, sort, selected, page, pageCount } = loaderData;
   const [sp] = useSearchParams();
   const navigating = useNavigation().state !== 'idle';
 
@@ -483,6 +459,15 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
     const params = new URLSearchParams(sp);
     if (next === 'inflatedShare') params.delete('sort');
     else params.set('sort', next);
+    params.delete('page'); // a new sort reorders the whole list — start from page 1
+    const qs = params.toString();
+    return qs ? `/price-anomaly?${qs}` : '/price-anomaly';
+  };
+  // Page link — preserves the sort + the cohort selection, drops `page` for page 1 (the canonical URL).
+  const pageHref = (n: number) => {
+    const params = new URLSearchParams(sp);
+    if (n <= 1) params.delete('page');
+    else params.set('page', String(n));
     const qs = params.toString();
     return qs ? `/price-anomaly?${qs}` : '/price-anomaly';
   };
@@ -510,8 +495,9 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
               Раздути спрямо <em>сходни поръчки</em>
             </h1>
             <p className="pa-mast-lede">
-              Изберѝ категории горе — от списъка или от разпределенията. Картончетата долу показват
-              всеки маркиран договор спрямо сходните му поръчки от същата категория (CPV).
+              Изберѝ категории от таблицата горе — всеки ред показва типичната цена и разпределението на
+              стойностите. Картончетата долу показват всеки маркиран договор спрямо сходните му поръчки
+              от същата категория (CPV).
             </p>
           </div>
           <dl className="pa-mast-kpis" aria-label="Метод на анализа">
@@ -561,7 +547,7 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
             </p>
           </Callout>
         ) : (
-          <div className="pa-toprow">
+          <>
             <CohortBrowse
               cohorts={cohorts}
               selected={selected}
@@ -569,8 +555,35 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
               cohortHref={cohortHref}
               sortHref={sortHref}
             />
-            <DistributionStrips cohorts={cohorts} selected={selected} cohortHref={cohortHref} />
-          </div>
+            {pageCount > 1 && (
+              <nav className="paging pa-paging" aria-label="Навигация по страници">
+                <div>
+                  стр. <strong>{count(page)}</strong> от <strong>{count(pageCount)}</strong> · по{' '}
+                  {PAGE_SIZE} категории
+                </div>
+                <div className="ctrl">
+                  {page > 1 ? (
+                    <Link to={pageHref(page - 1)} rel="prev nofollow">
+                      ‹ Предишна
+                    </Link>
+                  ) : (
+                    <span aria-disabled="true" className="disabled">
+                      ‹ Предишна
+                    </span>
+                  )}
+                  {page < pageCount ? (
+                    <Link to={pageHref(page + 1)} rel="next nofollow">
+                      Следваща ›
+                    </Link>
+                  ) : (
+                    <span aria-disabled="true" className="disabled">
+                      Следваща ›
+                    </span>
+                  )}
+                </div>
+              </nav>
+            )}
+          </>
         )}
 
         <section className="pa-panel pa-scorecards" aria-labelledby="pa-cards-h">
