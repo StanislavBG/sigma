@@ -4142,6 +4142,126 @@ tbody td,
   border-top: 1px solid var(--rule-soft);
 }
 .trend-rail-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.trend-rail-date {
+  font:
+    500 9.5px/1 'IBM Plex Mono',
+    var(--font-mono);
+  color: var(--ink-soft);
+}
+.trend-rail-val {
+  font:
+    600 11px/1 'IBM Plex Mono',
+    var(--font-mono);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.trend-rail-buyer {
+  margin-top: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.trend-rail-seller {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-mid);
+}
+.trend-rail-seller-arrow {
+  color: var(--accent);
+}
+.trend-rail-subject {
+  margin-top: 5px;
+}
+.trend-rail-subject a {
+  font-size: 11px;
+}
+.trend-rail-empty {
+  padding: 16px;
+}
+.trend-rail-end {
+  padding: 12px 16px 16px;
+  font:
+    400 10px/1 'IBM Plex Mono',
+    var(--font-mono);
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+/* combo chart wrapper + hover tooltip (TrendComboChart.tsx) */
+.trend-chart-wrap {
+  position: relative;
+  width: 100%;
+}
+.trend-svg {
+  display: block;
+  overflow: visible;
+}
+.trend-tip {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -112%);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 7px 10px;
+  border-radius: 3px;
+  white-space: nowrap;
+  z-index: 5;
+  font-family: 'IBM Plex Mono', var(--font-mono);
+}
+.trend-tip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  opacity: 0.8;
+}
+.trend-tip-badge {
+  border: 1px solid color-mix(in oklch, var(--accent) 50%, transparent);
+  color: var(--accent);
+  border-radius: 2px;
+  padding: 1px 4px;
+  font-size: 7.5px;
+  letter-spacing: 0.1em;
+}
+.trend-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+}
+.trend-tip-row.is-first {
+  margin-top: 5px;
+}
+.trend-tip-sw-line {
+  width: 8px;
+  height: 2.4px;
+  background: var(--accent);
+  display: inline-block;
+  border-radius: 2px;
+}
+.trend-tip-sw-box {
+  width: 8px;
+  height: 8px;
+  background: color-mix(in oklch, var(--paper) 65%, var(--ink));
+  display: inline-block;
+  border-radius: 1px;
+}
+.trend-tip-label {
+  font-size: 9px;
+  opacity: 0.8;
+}
+.trend-tip-val {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+}
+/* ===== end trends-dashboard ===== */
+
 /* ===== overruns-dashboard ===== */
 /* Static layout/typography for /overruns + the /analytics „Раздуване" hero. Ported from the route
    files (no new inline style=, per docs/review-accessibility.md). Only data-driven values (bar/
@@ -4334,120 +4454,6 @@ tbody td,
   justify-content: space-between;
   gap: 10px;
 }
-.trend-rail-date {
-  font:
-    500 9.5px/1 'IBM Plex Mono',
-    var(--font-mono);
-  color: var(--ink-soft);
-}
-.trend-rail-val {
-  font:
-    600 11px/1 'IBM Plex Mono',
-    var(--font-mono);
-  color: var(--ink);
-  white-space: nowrap;
-}
-.trend-rail-buyer {
-  margin-top: 5px;
-  font-size: 11.5px;
-  font-weight: 500;
-}
-.trend-rail-seller {
-  margin-top: 2px;
-  font-size: 11px;
-  color: var(--ink-mid);
-}
-.trend-rail-seller-arrow {
-  color: var(--accent);
-}
-.trend-rail-subject {
-  margin-top: 5px;
-}
-.trend-rail-subject a {
-  font-size: 11px;
-}
-.trend-rail-empty {
-  padding: 16px;
-}
-.trend-rail-end {
-  padding: 12px 16px 16px;
-  font:
-    400 10px/1 'IBM Plex Mono',
-    var(--font-mono);
-  color: var(--ink-soft);
-  text-align: center;
-}
-
-/* combo chart wrapper + hover tooltip (TrendComboChart.tsx) */
-.trend-chart-wrap {
-  position: relative;
-  width: 100%;
-}
-.trend-svg {
-  display: block;
-  overflow: visible;
-}
-.trend-tip {
-  position: absolute;
-  pointer-events: none;
-  transform: translate(-50%, -112%);
-  background: var(--ink);
-  color: var(--paper);
-  padding: 7px 10px;
-  border-radius: 3px;
-  white-space: nowrap;
-  z-index: 5;
-  font-family: 'IBM Plex Mono', var(--font-mono);
-}
-.trend-tip-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  opacity: 0.8;
-}
-.trend-tip-badge {
-  border: 1px solid color-mix(in oklch, var(--accent) 50%, transparent);
-  color: var(--accent);
-  border-radius: 2px;
-  padding: 1px 4px;
-  font-size: 7.5px;
-  letter-spacing: 0.1em;
-}
-.trend-tip-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 3px;
-}
-.trend-tip-row.is-first {
-  margin-top: 5px;
-}
-.trend-tip-sw-line {
-  width: 8px;
-  height: 2.4px;
-  background: var(--accent);
-  display: inline-block;
-  border-radius: 2px;
-}
-.trend-tip-sw-box {
-  width: 8px;
-  height: 8px;
-  background: color-mix(in oklch, var(--paper) 65%, var(--ink));
-  display: inline-block;
-  border-radius: 1px;
-}
-.trend-tip-label {
-  font-size: 9px;
-  opacity: 0.8;
-}
-.trend-tip-val {
-  margin-left: auto;
-  font-size: 11px;
-  font-weight: 600;
-}
-/* ===== end trends-dashboard ===== */
 .ov-row-subject {
   font-size: 12px;
   font-weight: 500;
