@@ -59,6 +59,21 @@ describe('getCompareLeaderboard', () => {
     ]);
   });
 
+  it('ranks a pinned entity outside the top with a tie-break matching the list order', async () => {
+    const sql: string[] = [];
+    const board = await getCompareLeaderboard(fakeDb(sql), {
+      kind: 'authority',
+      metric: 'total',
+      highlightIds: ['auth:Z'],
+    });
+    const rankSql = sql.find((s) => s.includes('COUNT(*)') && s.includes('> ?'));
+    expect(rankSql).toBeDefined();
+    // mirrors `ORDER BY metric DESC, id`: equal-metric + smaller-id entities count as ahead, so the
+    // reported rank lines up with where the entity would sit in the list.
+    expect(rankSql).toMatch(/> \? OR \(.*= \? AND .*< \?\)/);
+    expect(board.pinned[0]?.rank).toBe(5);
+  });
+
   it('guards ratio metrics with a min-contracts WHERE and marks EU as a percentage', async () => {
     const sql: string[] = [];
     const board = await getCompareLeaderboard(fakeDb(sql), { kind: 'authority', metric: 'eu' });

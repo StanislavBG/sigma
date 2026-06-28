@@ -120,29 +120,33 @@ export async function getCompareLeaderboard(
 
   // The compared entities, with their TRUE rank — even when outside the top N (the „where do I stand"
   // payoff). A highlight already in the top list reuses that row + rank (no query); otherwise a single
-  // by-PK lookup, plus one „how many beat me" count when it qualifies. Bounded to ≤ highlightIds.length.
-  const pinned: LeaderboardRow[] = [];
-  for (const hid of highlightIds) {
-    const inTop = topById.get(hid);
-    if (inTop) {
-      pinned.push(toRow(inTop.raw, inTop.rank));
-      continue;
-    }
-    const lr = await db.prepare(`${select} WHERE ${b.id} = ?`).bind(hid).first<Raw>();
-    if (!lr) continue;
-    const qualifies = !b.isRatio || (lr.contracts >= LEADERBOARD_MIN_CONTRACTS && lr.total_eur > 0);
-    let rank = 0;
-    if (qualifies) {
-      const c = await db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM ${b.table} ${b.where ? b.where + ' AND' : 'WHERE'} ${b.metricExpr} > ?`,
-        )
-        .bind(lr.metric)
-        .first<{ n: number }>();
-      rank = Number(c?.n ?? 0) + 1;
-    }
-    pinned.push({ ...toRow(lr, rank), highlighted: true });
-  }
+  // by-PK lookup, plus one „how many beat me" count when it qualifies. Each pinned entity is resolved
+  // independently, so the whole batch runs in parallel (Promise.all) rather than awaiting in series.
+  // The rank count mirrors the list's `metric DESC, id` ordering: an entity is preceded by anything
+  // with a strictly greater metric OR an equal metric and a smaller id, so its rank matches its row.
+  const pinned: LeaderboardRow[] = (
+    await Promise.all(
+      highlightIds.map(async (hid): Promise<LeaderboardRow | null> => {
+        const inTop = topById.get(hid);
+        if (inTop) return toRow(inTop.raw, inTop.rank);
+        const lr = await db.prepare(`${select} WHERE ${b.id} = ?`).bind(hid).first<Raw>();
+        if (!lr) return null;
+        const qualifies =
+          !b.isRatio || (lr.contracts >= LEADERBOARD_MIN_CONTRACTS && lr.total_eur > 0);
+        let rank = 0;
+        if (qualifies) {
+          const c = await db
+            .prepare(
+              `SELECT COUNT(*) AS n FROM ${b.table} ${b.where ? b.where + ' AND' : 'WHERE'} (${b.metricExpr} > ? OR (${b.metricExpr} = ? AND ${b.id} < ?))`,
+            )
+            .bind(lr.metric, lr.metric, lr.id)
+            .first<{ n: number }>();
+          rank = Number(c?.n ?? 0) + 1;
+        }
+        return { ...toRow(lr, rank), highlighted: true };
+      }),
+    )
+  ).filter((r): r is LeaderboardRow => r !== null);
 
   return { metric, isRatio: b.isRatio, isPct: metric === 'eu', rows, pinned, qualifying, maxValue };
 }
