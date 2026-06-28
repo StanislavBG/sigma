@@ -7,6 +7,7 @@ import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
 import { FilterRail, type FilterGroup } from '../components/FilterRail';
 import { ListControls } from '../components/ListControls';
+import { ListSearch } from '../components/ListSearch';
 import { Pagination } from '../components/Pagination';
 import { DataTable, type Column } from '../components/DataTable';
 import { Callout, Chip } from '../components/ui';
@@ -147,6 +148,10 @@ export default function Authorities({ loaderData }: Route.ComponentProps) {
         <div className="split">
           <FilterRail groups={groups} sort={sort} clearHref="/authorities" csvHref={csvHref} />
           <section>
+            <ListSearch
+              placeholder="Търси институция по име или ЕИК…"
+              label="Търсене на институция"
+            />
             <ListControls
               base={sp}
               activeSort={sort}

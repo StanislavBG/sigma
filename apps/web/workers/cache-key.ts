@@ -7,6 +7,7 @@ export const CACHE_QUERY_PARAMS = new Set([
   'bids', // /contracts: c.bids_received = 1 — changes the result set and headline totals (CWE-349, #56)
   'by', // /overruns — sort dimension (absolute | percent)
   'center',
+  'cohort', // /price-anomaly — selected CPV cohorts (repeatable); faceting changes the result set
   'count',
   'cursor',
   'eu',

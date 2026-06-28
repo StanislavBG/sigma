@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import {
+  getCohortOutliers,
   getFlowsHeadline,
   getOpaqueShareByYear,
   getOverrunsHeadline,
+  getPriceAnomalyKpis,
   getRegionHeadline,
   getSpendingTrend,
 } from '@sigma/db';
@@ -20,6 +22,7 @@ import {
   opaqueHeadline,
   peakPoint,
 } from '../lib/analytics-stats';
+import { fmtMult } from '../lib/price-anomaly-chart';
 import { estimateYoyGrowth } from '../lib/trends-forecast';
 import { seoMeta } from '../lib/meta';
 
@@ -29,7 +32,7 @@ export function meta({ matches }: Route.MetaArgs) {
     path: '/analytics',
     title: 'Анализи — СИГМА',
     description:
-      'Пет аналитични изгледа към едни и същи обществени поръчки: раздуване след анекси, потоци на парите, карта по области, тренд във времето и конкуренция на процедурите — всеки води обратно към конкретните договори.',
+      'Шест аналитични изгледа към едни и същи обществени поръчки: раздуване след анекси, потоци на парите, карта по области, тренд във времето, конкуренция на процедурите и аномални цени спрямо сходни поръчки — всеки води обратно към конкретните договори.',
   });
 }
 
@@ -37,13 +40,14 @@ export function headers() {
   return { 'Cache-Control': publicCache(1800) };
 }
 
-// Five lean, bounded rollup reads — one per landing card — in a single Promise.all (edge-cached
+// Six lean, bounded rollup reads — one per landing card — in a single Promise.all (edge-cached
 // 1800s). Query budget: getOverrunsHeadline (1) + getFlowsHeadline (1) + getRegionHeadline (1) +
-// getSpendingTrend month series (3: series + coverage + as_of) + getOpaqueShareByYear (1) = 7
-// statements per cold load. The derivations (avg YoY, peak month, opaque headline) are pure helpers.
+// getSpendingTrend month series (3: series + coverage + as_of) + getOpaqueShareByYear (1) +
+// getPriceAnomalyKpis (1) + getCohortOutliers top-1 (1) = 9 statements per cold load. The derivations
+// (avg YoY, peak month, opaque headline, top mult) are pure helpers over the already-fetched rows.
 export async function loader({ context }: Route.LoaderArgs) {
   const db = context.cloudflare.env.DB;
-  const [overruns, flows, region, trend, opaque] = await Promise.all([
+  const [overruns, flows, region, trend, opaque, anomalyKpis, topOutlier] = await Promise.all([
     getOverrunsHeadline(db),
     getFlowsHeadline(db),
     getRegionHeadline(db),
@@ -53,6 +57,9 @@ export async function loader({ context }: Route.LoaderArgs) {
       { includeSectors: false, includeInsights: false },
     ),
     getOpaqueShareByYear(db),
+    getPriceAnomalyKpis(db),
+    // The single most-deviant flagged contract — its ×median is the card's „МАКС. ОТКЛОНЕНИЕ" KPI.
+    getCohortOutliers(db, { limit: 1 }),
   ]);
 
   const peak = peakPoint(trend.points);
@@ -66,6 +73,10 @@ export async function loader({ context }: Route.LoaderArgs) {
     region,
     trend: { avgYoy: growth.value - 1, peakPeriod: peak?.period ?? null },
     opaque: opaqueHeadline(opaque),
+    anomaly: {
+      cohortCount: anomalyKpis.cohortCount,
+      topMult: topOutlier[0]?.mult ?? null,
+    },
   };
 }
 
@@ -274,8 +285,46 @@ function ThumbCompetition() {
   );
 }
 
+function ThumbPriceAnomaly() {
+  // A log-scale dot strip: a cohort cloud around a dashed median, with three accent outliers pushed
+  // far to the right. Static, representative geometry — the card's KPI figures carry the real numbers.
+  const dots = [
+    [40, 92],
+    [58, 70],
+    [70, 104],
+    [86, 80],
+    [98, 96],
+    [110, 66],
+    [120, 110],
+    [134, 84],
+    [148, 100],
+    [160, 72],
+    [172, 108],
+    [186, 88],
+    [150, 60],
+    [128, 120],
+    [96, 58],
+  ];
+  const outliers = [
+    [236, 96],
+    [270, 70],
+    [298, 104],
+  ];
+  return (
+    <svg className="az-thumb" viewBox="0 0 320 168" focusable="false">
+      <line className="az-stroke-accent az-thumb-dash" x1="150" y1="30" x2="150" y2="138" />
+      {dots.map(([cx, cy], i) => (
+        <circle key={i} className="az-fill-ink az-thumb-soft" cx={cx} cy={cy} r="4" />
+      ))}
+      {outliers.map(([cx, cy], i) => (
+        <circle key={`o${i}`} className="az-fill-accent" cx={cx} cy={cy} r="6" />
+      ))}
+    </svg>
+  );
+}
+
 export default function Analytics({ loaderData }: Route.ComponentProps) {
-  const { overruns, flows, region, trend, opaque } = loaderData;
+  const { overruns, flows, region, trend, opaque, anomaly } = loaderData;
 
   return (
     <>
@@ -312,7 +361,7 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
                 },
                 {
                   value: growthMultiple(overruns.medianPct),
-                  label: 'МЕДИАНА РАСТЕЖ',
+                  label: 'ТИПИЧЕН РАСТЕЖ',
                   summary:
                     'Типичното нарастване — половината договори растат повече, половината по-малко.',
                   hint: '„×" = колко пъти спрямо стойността при сключване.',
@@ -383,7 +432,7 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
                   label: 'СРЕДЕН РЪСТ',
                   accent: true,
                   summary:
-                    'Типичният годишен ръст на разходите — медиана за последните 3 пълни години.',
+                    'Типичният годишен ръст на разходите за последните 3 пълни години.',
                   hint: 'Същата стойност като на страницата „Тренд".',
                 },
                 {
@@ -420,6 +469,33 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
                 },
               ]}
               thumb={<ThumbCompetition />}
+            />
+
+            <AnalyzeCard
+              index="06"
+              category="СКЪПИ СПРЯМО СХОДНИ ПОРЪЧКИ"
+              to="/price-anomaly"
+              titlePre="Раздути спрямо "
+              titleEm="сходни"
+              desc="Кои договори са необичайно скъпи спрямо сходни поръчки в същата CPV категория — разпределение, класация и картонче за всеки маркиран договор."
+              cta="Виж аномалиите"
+              stats={[
+                {
+                  value: count(anomaly.cohortCount),
+                  label: 'CPV ГРУПИ',
+                  summary:
+                    'Брой категории (CPV) с достатъчно сходни поръчки (поне 30), за да се прецени дали договор е необичайно скъп.',
+                },
+                {
+                  value: anomaly.topMult != null ? fmtMult(anomaly.topMult) : '—',
+                  label: 'МАКС. ОТКЛОНЕНИЕ',
+                  accent: true,
+                  summary:
+                    'Колко пъти над типичната стойност за сходните поръчки от същата категория е най-силно изпъкващият маркиран договор.',
+                  hint: 'Голяма стойност ≠ надплащане — маркира за проверка, не доказва злоупотреба.',
+                },
+              ]}
+              thumb={<ThumbPriceAnomaly />}
             />
           </div>
 

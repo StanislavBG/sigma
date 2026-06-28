@@ -215,6 +215,10 @@ function runFullDerive() {
   execSql(resolve(root, 'scripts/promote-amendments.sql'));
   assertFxPopulated();
   execSql(resolve(root, 'scripts/precompute.sql'));
+  // Price-anomaly rollups (cpv_cohort_*): a node step that reads the served sqlite directly and computes
+  // the per-cohort log-MAD outliers (see scripts/precompute-price-anomaly.mjs). Local only — it needs
+  // the on-disk sqlite file; the remote path ships rollups via the work-DB route (ship-domain.mjs).
+  if (!remote) run('node', ['scripts/precompute-price-anomaly.mjs']);
   assertIntegrity(d1, { label: 'full derive (D1)' });
 }
 
