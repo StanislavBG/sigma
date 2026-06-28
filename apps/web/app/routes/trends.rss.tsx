@@ -20,12 +20,18 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
   const { env } = context.cloudflare;
   const result = await withDbRetry(() =>
-    listContracts(env.DB, {
-      sort: 'date-desc',
-      sectors: validSector ? [validSector] : [],
-      eu: funding,
-      pageSize: FEED_SIZE,
-    }),
+    // The dummy summary override skips listContracts' COUNT/SUM scan over ~190k contracts: the RSS
+    // body only reads result.items (newest N), never the total/valueEur/suspect summary.
+    listContracts(
+      env.DB,
+      {
+        sort: 'date-desc',
+        sectors: validSector ? [validSector] : [],
+        eu: funding,
+        pageSize: FEED_SIZE,
+      },
+      { total: 0, valueEur: 0, suspect: 0 },
+    ),
   );
   const lastBuildDate = rfc822(result.items[0]?.signedAt) ?? new Date().toUTCString();
   // Re-derive the query from the *validated* filters only (a bogus ?sector is dropped), so a filtered
