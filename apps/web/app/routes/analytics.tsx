@@ -72,6 +72,10 @@ interface Stat {
   value: string;
   label: string;
   accent?: boolean;
+  // A one-line plain-language gloss under the label, demystifying jargon (the „×" growth factor,
+  // „непрозрачни процедури"). The whole card is an anchor, so this is a caption — not a MetricInfo
+  // button (a nested interactive control would be invalid inside the link).
+  hint?: string;
 }
 
 interface CardProps {
@@ -123,6 +127,7 @@ function AnalyzeCard({
                   {s.value}
                 </dd>
                 <dt className="az-stat-label">{s.label}</dt>
+                {s.hint ? <dd className="az-stat-hint">{s.hint}</dd> : null}
               </div>
             ))}
           </dl>
@@ -290,7 +295,11 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
               cta="Виж раздуването"
               stats={[
                 { value: money(overruns.totalOverrunEur), label: 'ОБЩО РАЗДУВАНЕ', accent: true },
-                { value: growthMultiple(overruns.medianPct), label: 'МЕДИАНА РАСТЕЖ' },
+                {
+                  value: growthMultiple(overruns.medianPct),
+                  label: 'МЕДИАНА РАСТЕЖ',
+                  hint: '„×" = колко пъти спрямо стойността при сключване',
+                },
               ]}
               thumb={<ThumbOverruns />}
             />
@@ -335,7 +344,12 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
               desc="Как се движат разходите по месеци и години — сезонните пикове в края на годината и прогнозата напред."
               cta="Виж тренда"
               stats={[
-                { value: formatYearlyGrowth(trend.avgYoy), label: 'СРЕДЕН РЪСТ', accent: true },
+                {
+                  value: formatYearlyGrowth(trend.avgYoy),
+                  label: 'СРЕДЕН РЪСТ',
+                  accent: true,
+                  hint: 'типичен годишен ръст на разходите',
+                },
                 { value: formatPeakMonth(trend.peakPeriod), label: 'ПИК' },
               ]}
               thumb={<ThumbTrends />}
@@ -354,6 +368,7 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
                   value: opaque ? pct(opaque.latestShare) : '—',
                   label: opaque ? `НЕПРОЗРАЧНИ ${opaque.latestYear}` : 'НЕПРОЗРАЧНИ',
                   accent: true,
+                  hint: 'дял на процедурите с един участник или без обявяване',
                 },
                 {
                   value: opaque ? formatPpChange(opaque.ppChange) : '—',
@@ -363,6 +378,8 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
               thumb={<ThumbCompetition />}
             />
           </div>
+
+          <p className="small muted source-line">Данни: Регистър на обществените поръчки (АОП)</p>
         </div>
       </main>
     </>

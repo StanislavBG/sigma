@@ -487,87 +487,89 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                 <span className="trend-hint">кликни година за филтър ↓</span>
               </div>
               {data.years.length > 0 ? (
-                <table className="trend-years">
-                  <caption className="sr-only">
-                    Разходи по години: стойност, брой договори, среден договор, дял и промяна спрямо
-                    предходната година. Изберете година, за да филтрирате графиката.
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th>ГОДИНА</th>
-                      <th>СТОЙНОСТ</th>
-                      <th>ДОГОВОРИ</th>
-                      <th>СРЕДЕН</th>
-                      <th>ДЯЛ</th>
-                      <th>СПРЯМО ПРЕДХ.</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.years.map((y) => {
-                      const yr = Number(y.year);
-                      const on = activeYear === yr;
-                      const share = grandTotal > 0 ? y.valueEur / grandTotal : 0;
-                      const avg = y.contracts > 0 ? y.valueEur / y.contracts : 0;
-                      const pos = (y.yoyPct ?? 0) >= 0;
-                      const barW =
-                        y.yoyPct == null
-                          ? 0
-                          : Math.min(64, (Math.abs(y.yoyPct) / YOY_BAR_MAX) * 64);
-                      return (
-                        <tr
-                          key={y.year}
-                          style={{ background: on ? 'var(--accent-bg)' : 'transparent' }}
-                        >
-                          <td className="c-year">
-                            <button
-                              type="button"
-                              aria-pressed={on}
-                              onClick={() => setActiveYear(on ? null : yr)}
-                              className="trend-year-btn"
-                            >
-                              {y.year}
-                            </button>
-                            {y.partial && <span className="muted small"> частично</span>}
-                          </td>
-                          <td className="c-value">{money(y.valueEur)}</td>
-                          <td className="c-num">{count(y.contracts)}</td>
-                          <td className="c-num">{avg > 0 ? money(avg) : '—'}</td>
-                          <td className="c-share">{pct(share)}</td>
-                          <td className="c-yoy">
-                            <span className="trend-yoy-cell">
-                              <span
-                                aria-hidden="true"
-                                className="trend-yoy-bar"
-                                style={{
-                                  width: barW,
-                                  background:
-                                    y.yoyPct == null
-                                      ? 'transparent'
-                                      : pos
-                                        ? 'var(--accent)'
-                                        : 'color-mix(in oklch, var(--ink) 35%, transparent)',
-                                }}
-                              />
-                              <span
-                                className="trend-yoy-pct"
-                                style={{
-                                  color:
-                                    y.yoyPct == null
-                                      ? 'var(--ink-soft)'
-                                      : pos
-                                        ? 'var(--accent)'
-                                        : 'var(--ink-mid)',
-                                }}
+                <div className="ov-table-scroll">
+                  <table className="trend-years">
+                    <caption className="sr-only">
+                      Разходи по години: стойност, брой договори, среден договор, дял и промяна
+                      спрямо предходната година. Изберете година, за да филтрирате графиката.
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th>ГОДИНА</th>
+                        <th>СТОЙНОСТ</th>
+                        <th>ДОГОВОРИ</th>
+                        <th>СРЕДЕН</th>
+                        <th>ДЯЛ</th>
+                        <th>СПРЯМО ПРЕДХ.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.years.map((y) => {
+                        const yr = Number(y.year);
+                        const on = activeYear === yr;
+                        const share = grandTotal > 0 ? y.valueEur / grandTotal : 0;
+                        const avg = y.contracts > 0 ? y.valueEur / y.contracts : 0;
+                        const pos = (y.yoyPct ?? 0) >= 0;
+                        const barW =
+                          y.yoyPct == null
+                            ? 0
+                            : Math.min(64, (Math.abs(y.yoyPct) / YOY_BAR_MAX) * 64);
+                        return (
+                          <tr
+                            key={y.year}
+                            style={{ background: on ? 'var(--accent-bg)' : 'transparent' }}
+                          >
+                            <td className="c-year">
+                              <button
+                                type="button"
+                                aria-pressed={on}
+                                onClick={() => setActiveYear(on ? null : yr)}
+                                className="trend-year-btn"
                               >
-                                {y.yoyPct == null ? '—' : signedPct(y.yoyPct)}
+                                {y.year}
+                              </button>
+                              {y.partial && <span className="muted small"> частично</span>}
+                            </td>
+                            <td className="c-value">{money(y.valueEur)}</td>
+                            <td className="c-num">{count(y.contracts)}</td>
+                            <td className="c-num">{avg > 0 ? money(avg) : '—'}</td>
+                            <td className="c-share">{pct(share)}</td>
+                            <td className="c-yoy">
+                              <span className="trend-yoy-cell">
+                                <span
+                                  aria-hidden="true"
+                                  className="trend-yoy-bar"
+                                  style={{
+                                    width: barW,
+                                    background:
+                                      y.yoyPct == null
+                                        ? 'transparent'
+                                        : pos
+                                          ? 'var(--accent)'
+                                          : 'color-mix(in oklch, var(--ink) 35%, transparent)',
+                                  }}
+                                />
+                                <span
+                                  className="trend-yoy-pct"
+                                  style={{
+                                    color:
+                                      y.yoyPct == null
+                                        ? 'var(--ink-soft)'
+                                        : pos
+                                          ? 'var(--accent)'
+                                          : 'var(--ink-mid)',
+                                  }}
+                                >
+                                  {y.yoyPct == null ? '—' : signedPct(y.yoyPct)}
+                                </span>
                               </span>
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <p className="muted trend-years-empty">Няма данни за избрания срез.</p>
               )}
@@ -628,7 +630,10 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
         <Callout title="За покритието на данните">
           <p className="trend-callout-p">
             Графиката включва договорите с валидна дата на сключване ({pct(data.coverage.pct)} от
-            тях). Последният период е непълен и е изключен от трендовата линия.
+            тях). Последният период е непълен и е изключен от трендовата линия
+            {chartPartial
+              ? ' — натрупаната му стойност е отбелязана отделно като маркера „до момента".'
+              : '.'}
             {hasForecast && (
               <>
                 {' '}
@@ -640,6 +645,8 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
             Виж методологията за подробности.
           </p>
         </Callout>
+
+        <p className="small muted source-line">Данни: Регистър на обществените поръчки (АОП)</p>
       </main>
     </>
   );

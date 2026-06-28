@@ -30,7 +30,8 @@ const MONTHS_SHORT_BG = [
 export function growthMultiple(medianPct: number | null | undefined): string {
   if (medianPct == null || !Number.isFinite(medianPct)) return EM_DASH;
   const multiple = 1 + medianPct;
-  return `${multiple.toFixed(1).replace('.', ',')}×`;
+  // Spell out the percentage so „1,4×" can't be misread as „40% of": „1,4× (+40%)".
+  return `${multiple.toFixed(1).replace('.', ',')}× (${signedPct(medianPct)})`;
 }
 
 // „+18%/год" — yearly growth as a signed integer percentage with the per-year suffix. The input ratio

@@ -1824,6 +1824,14 @@ details.row .body .signal .why {
   text-transform: uppercase;
   color: var(--ink-soft);
 }
+.az-stat-hint {
+  max-width: 22ch;
+  margin: 1px 0 0;
+  font: 400 9px/1.3 var(--font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-soft);
+}
 .az-card-cta {
   flex: none;
   font: 600 11px/1.3 var(--font-mono);

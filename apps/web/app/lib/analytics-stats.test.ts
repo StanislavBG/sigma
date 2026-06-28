@@ -12,9 +12,9 @@ import {
 
 describe('growthMultiple', () => {
   it('turns a median overrun pct into 1 + pct as a ×-multiple', () => {
-    expect(growthMultiple(2.1)).toBe('3,1×');
-    expect(growthMultiple(0.5)).toBe('1,5×');
-    expect(growthMultiple(0)).toBe('1,0×');
+    expect(growthMultiple(2.1)).toBe('3,1× (+210%)');
+    expect(growthMultiple(0.5)).toBe('1,5× (+50%)');
+    expect(growthMultiple(0)).toBe('1,0× (0%)');
   });
   it('returns an em-dash for absent / non-finite input', () => {
     expect(growthMultiple(null)).toBe('—');
