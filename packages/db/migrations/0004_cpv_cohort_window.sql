@@ -1,0 +1,27 @@
+-- Temporal (inflation-adjusted) cohort for the „Раздути спрямо сходни" dashboard. Extends migration
+-- 0003: detection moves from an ALL-PERIOD same-CPV cohort to a per-contract SLIDING WINDOW — same
+-- 5-digit CPV group AND signed within ±1 year of the contract's own signed_at.
+--
+-- WHY: prices inflate across the corpus period, so judging a 2018 contract against 2024 peers conflates
+-- inflation with anomaly. Restricting each contract's cohort to peers signed within ±365 days holds time
+-- roughly constant, so the robust z reads as „expensive vs similar-era peers", not „expensive vs the
+-- whole history". The computation lives in scripts/cohort-stats.mjs (windowed in computeCohorts) and is
+-- persisted by scripts/precompute-price-anomaly.mjs.
+--
+-- WHAT CHANGES per table (values change; only cpv_cohort_outlier gains a column):
+--   • cpv_cohort_outlier — value_eur / mult / percentile are now WINDOW-relative (judged against the
+--     ±1-year peers, not the whole group). The new window_median_eur stores the ±1-year median the
+--     contract was judged against, so the read layer can show an honest „медиана (±1 г.)" without
+--     re-deriving it from value/mult.
+--   • cpv_cohort_stats — outlier_count / inflated_share now count the temporally-flagged outliers; n and
+--     median_eur stay the GROUP all-period totals (display context for the browse table's „ТИПИЧНА").
+--   • cpv_cohort_sample — unchanged: still an all-period quantile sample (the distribution strip is
+--     all-period CONTEXT; detection is windowed).
+--
+-- The n≥30 minimum-cohort rule now applies to the WINDOW: a contract is evaluated only when its ±1-year
+-- same-CPV window holds ≥30 peers. Sparse CPV-years and undated contracts (no signed_at — can't be placed
+-- in time) are excluded from detection — honestly, never silently flagged.
+--
+-- IDEMPOTENT: the precompute step does DELETE + INSERT, so a re-run always reflects the current corpus.
+
+ALTER TABLE cpv_cohort_outlier ADD COLUMN window_median_eur REAL NOT NULL DEFAULT 0;

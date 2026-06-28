@@ -31,6 +31,7 @@ const outlierRaw = (over: Partial<Record<string, unknown>> = {}) => ({
   value_eur: 50_000_000,
   mult: 326.5,
   percentile: 100,
+  window_median_eur: 153_139,
   authority_id: 'auth:000695089',
   authority_name: 'Министерство на финансите',
   bidder_id: 'eik:103267194',
@@ -139,6 +140,7 @@ describe('getCohortOutliers', () => {
     expect(r.bidderSlug).toBe('103267194');
     expect(r.mult).toBe(326.5);
     expect(r.percentile).toBe(100);
+    expect(r.windowMedianEur).toBe(153_139);
     expect(r.subject).toBe('Строеж на магистрала');
     expect(r.cpvCode).toBe('45233110');
     expect(r.bidderEik).toBe('103267194');

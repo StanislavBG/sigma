@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS cpv_cohort_sample (code TEXT NOT NULL, value_eur REAL
 CREATE INDEX IF NOT EXISTS idx_cpv_cohort_sample_code ON cpv_cohort_sample(code);
 CREATE TABLE IF NOT EXISTS cpv_cohort_outlier (
   contract_id TEXT PRIMARY KEY, code TEXT NOT NULL, value_eur REAL NOT NULL,
-  mult REAL NOT NULL, percentile INTEGER NOT NULL
+  mult REAL NOT NULL, percentile INTEGER NOT NULL, window_median_eur REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_cpv_cohort_outlier_code ON cpv_cohort_outlier(code);
 CREATE INDEX IF NOT EXISTS idx_cpv_cohort_outlier_mult ON cpv_cohort_outlier(mult DESC);
@@ -83,13 +83,23 @@ function main() {
   const db = new DatabaseSync(target);
   db.exec(SCHEMA);
 
+  // Self-bootstrap the temporal window column (migration 0004) on a DB created before that migration —
+  // CREATE IF NOT EXISTS above won't add a column to an existing table. Mirrors the migration exactly.
+  const outlierCols = db
+    .prepare('PRAGMA table_info(cpv_cohort_outlier)')
+    .all()
+    .map((c) => c.name);
+  if (!outlierCols.includes('window_median_eur')) {
+    db.exec('ALTER TABLE cpv_cohort_outlier ADD COLUMN window_median_eur REAL NOT NULL DEFAULT 0');
+  }
+
   // ── Read the priced corpus, grouped by 5-digit CPV cohort ──────────────────────────────────────
   // Base = contracts with a clean positive amount_eur and a CPV code at least 5 chars long. amount_eur
   // is the canonical headline value (same base the other rollups use). v > 0 so ln(v) is defined.
   const rows = db
     .prepare(
       `SELECT c.id AS id, substr(t.cpv_code, 1, 5) AS code, c.amount_eur AS value,
-              t.cpv_description AS descr
+              c.signed_at AS signed_at, t.cpv_description AS descr
        FROM contracts c
        JOIN tenders t ON t.id = c.tender_id
        WHERE c.amount_eur IS NOT NULL AND c.amount_eur > 0 AND length(t.cpv_code) >= 5`,
@@ -105,7 +115,7 @@ function main() {
       cohorts.set(r.code, bucket);
       descCounts.set(r.code, new Map());
     }
-    bucket.push({ id: r.id, value: r.value });
+    bucket.push({ id: r.id, value: r.value, signedAt: r.signed_at });
     const d = (r.descr ?? '').trim();
     if (d) {
       const dc = descCounts.get(r.code);
@@ -129,7 +139,10 @@ function main() {
     return best ?? `CPV ${code}`;
   };
 
-  const { stats, outliers, samples, degenerate, tooSmall } = computeCohorts(cohorts, { labelFor });
+  const { stats, outliers, samples, degenerate, tooSmall, undated, sparseWindow } = computeCohorts(
+    cohorts,
+    { labelFor },
+  );
 
   // ── Write the rollups in one transaction (DELETE + INSERT) ─────────────────────────────────────
   db.exec('BEGIN');
@@ -149,10 +162,11 @@ function main() {
     for (const s of samples) insSample.run(s.code, s.value);
 
     const insOut = db.prepare(
-      `INSERT INTO cpv_cohort_outlier (contract_id, code, value_eur, mult, percentile)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO cpv_cohort_outlier (contract_id, code, value_eur, mult, percentile, window_median_eur)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     );
-    for (const o of outliers) insOut.run(o.contractId, o.code, o.valueEur, o.mult, o.percentile);
+    for (const o of outliers)
+      insOut.run(o.contractId, o.code, o.valueEur, o.mult, o.percentile, o.windowMedianEur);
 
     db.exec('COMMIT');
   } catch (err) {
@@ -166,7 +180,11 @@ function main() {
       `tooSmall=${tooSmall}  degenerate=${degenerate}`,
   );
   console.log(
-    `   flagged contracts (z≥${Z_THRESHOLD}, high tail)=${outliers.length}  sample rows=${samples.length}`,
+    `   flagged contracts (z≥${Z_THRESHOLD}, high tail, ±1yr window)=${outliers.length}  ` +
+      `sample rows=${samples.length}`,
+  );
+  console.log(
+    `   excluded from windowed detection: undated=${undated}  sparseWindow(<${MIN_COHORT_SIZE} temporal peers)=${sparseWindow}`,
   );
   db.close();
 }

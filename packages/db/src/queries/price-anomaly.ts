@@ -1,7 +1,9 @@
 // „Раздути спрямо сходни" (price-anomaly vs similar contracts) — the read layer over the precomputed
-// CPV-cohort rollups (cpv_cohort_stats / cpv_cohort_sample / cpv_cohort_outlier; migration 0003, filled
-// by scripts/precompute-price-anomaly.mjs). The dashboard flags contracts whose TOTAL value
-// (amount_eur) is a high-tail log-MAD outlier vs SIMILAR contracts in the same 5-digit CPV cohort.
+// CPV-cohort rollups (cpv_cohort_stats / cpv_cohort_sample / cpv_cohort_outlier; migrations 0003 + 0004,
+// filled by scripts/precompute-price-anomaly.mjs). The dashboard flags contracts whose TOTAL value
+// (amount_eur) is a high-tail log-MAD outlier vs SIMILAR-ERA contracts in the same 5-digit CPV cohort —
+// the cohort is the contract's same-CPV peers signed within ±1 year (an inflation-adjusted window), so a
+// flag reads as „expensive vs similar-era peers", not „expensive vs the whole history".
 //
 // HONESTY (must survive into any served text): this flags a contract for REVIEW against its CPV peers —
 // it is NOT proof of overpayment. There are no quantities in the source, so a large total can be a
@@ -15,10 +17,12 @@ import { cleanName, entityName } from '@sigma/shared';
 import { authoritySlug, companySlug, contractSlug } from './identity';
 
 // ── Methodology constants (mirror scripts/cohort-stats.mjs; the corpus-KPI thresholds) ─────────────
-/** Minimum cohort size: a 5-digit CPV cohort needs ≥ 30 priced peers to call anything an outlier. */
+/** Minimum cohort size: a contract's ±1-year same-CPV window needs ≥ 30 peers to call anything an outlier. */
 export const MIN_COHORT_SIZE = 30;
-/** Robust-z cutoff on log(value): flag a contract at z ≥ 3 on the high tail (v > cohort median). */
+/** Robust-z cutoff on log(value): flag a contract at z ≥ 3 on the high tail (v > window median). */
 export const Z_THRESHOLD = 3;
+/** Temporal window (days) for the inflation-adjusted cohort: peers signed within ±1 year of the contract. */
+export const WINDOW_DAYS = 365;
 
 const DEFAULT_COHORT_LIMIT = 50;
 const MAX_COHORT_LIMIT = 200;
@@ -54,10 +58,12 @@ export interface CohortOutlierRow {
   /** The cohort the contract was judged against. */
   code: string;
   valueEur: number;
-  /** value / cohort median — the „× над типичното" multiple. */
+  /** value / window median — the „× над типичното (±1 г.)" multiple. */
   mult: number;
-  /** Rank of the value within its cohort, 1..100. */
+  /** Rank of the value within its ±1-year window, 1..100. */
   percentile: number;
+  /** The ±1-year same-CPV median the contract was judged against (exp(median(ln v)) of the window). */
+  windowMedianEur: number;
   authorityName: string;
   authoritySlug: string;
   /** Authority ЕИК (the authority-route key). */
@@ -186,6 +192,7 @@ interface OutlierRaw {
   value_eur: number;
   mult: number;
   percentile: number;
+  window_median_eur: number;
   authority_id: string;
   authority_name: string;
   bidder_id: string;
@@ -215,6 +222,7 @@ export async function getCohortOutliers(
       `SELECT o.contract_id AS contract_id,
               COALESCE(NULLIF(TRIM(c.contract_subject), ''), t.title) AS subject,
               o.code AS code, o.value_eur AS value_eur, o.mult AS mult, o.percentile AS percentile,
+              o.window_median_eur AS window_median_eur,
               t.authority_id AS authority_id, a.name AS authority_name,
               c.bidder_id AS bidder_id, b.name AS bidder_name, b.kind AS bidder_kind,
               b.eik_normalized AS bidder_eik,
@@ -240,6 +248,7 @@ export async function getCohortOutliers(
     valueEur: r.value_eur,
     mult: r.mult,
     percentile: r.percentile,
+    windowMedianEur: r.window_median_eur,
     authorityName: cleanName(r.authority_name),
     authoritySlug: authoritySlug(r.authority_id),
     authorityEik: authoritySlug(r.authority_id),
