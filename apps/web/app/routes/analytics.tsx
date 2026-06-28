@@ -10,6 +10,7 @@ import {
 import { count, money, pct } from '@sigma/shared';
 import type { Route } from './+types/analytics';
 import { Breadcrumbs } from '../components/Breadcrumbs';
+import { MetricInfo } from '../components/MetricInfo';
 import { publicCache } from '../lib/cache';
 import {
   formatPeakMonth,
@@ -72,9 +73,10 @@ interface Stat {
   value: string;
   label: string;
   accent?: boolean;
-  // A one-line plain-language gloss under the label, demystifying jargon (the „×" growth factor,
-  // „непрозрачни процедури"). The whole card is an anchor, so this is a caption — not a MetricInfo
-  // button (a nested interactive control would be invalid inside the link).
+  // Plain-language description shown in the ⓘ popover for this stat (the card uses a stretched link, so
+  // the MetricInfo button is valid — it sits above the link, not inside an anchor).
+  summary?: string;
+  // Optional analytical readout / extra gloss line in the popover (e.g. what the „×" factor means).
   hint?: string;
 }
 
@@ -108,15 +110,18 @@ function AnalyzeCard({
   thumb,
 }: CardProps) {
   return (
-    <Link className="az-card" to={to}>
+    <div className="az-card">
       <div className="az-card-main">
         <p className="az-card-eyebrow">
           <span className="az-card-index">ИЗГЛЕД · {index}</span>
           <span className="az-card-cat">{category}</span>
         </p>
         <h2 className="az-card-title">
-          {titlePre}
-          <em className={emClass}>{titleEm}</em>
+          {/* stretched link: makes the whole card clickable while the stat ⓘ buttons stay above it */}
+          <Link className="az-card-stretch" to={to}>
+            {titlePre}
+            <em className={emClass}>{titleEm}</em>
+          </Link>
         </h2>
         <p className="az-card-desc">{desc}</p>
         <div className="az-card-foot">
@@ -126,8 +131,12 @@ function AnalyzeCard({
                 <dd className={s.accent ? 'az-stat-num az-stat-num--accent' : 'az-stat-num'}>
                   {s.value}
                 </dd>
-                <dt className="az-stat-label">{s.label}</dt>
-                {s.hint ? <dd className="az-stat-hint">{s.hint}</dd> : null}
+                <dt className="az-stat-label">
+                  {s.label}
+                  {s.summary ? (
+                    <MetricInfo title={s.label} summary={s.summary} readout={s.hint} />
+                  ) : null}
+                </dt>
               </div>
             ))}
           </dl>
@@ -137,7 +146,7 @@ function AnalyzeCard({
       <div className="az-card-thumb" aria-hidden="true">
         {thumb}
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -294,11 +303,19 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
               desc="Кои договори, институции и сектори раздуват най-много стойността си след сключване — и тенденцията във времето."
               cta="Виж раздуването"
               stats={[
-                { value: money(overruns.totalOverrunEur), label: 'ОБЩО РАЗДУВАНЕ', accent: true },
+                {
+                  value: money(overruns.totalOverrunEur),
+                  label: 'ОБЩО РАЗДУВАНЕ',
+                  accent: true,
+                  summary:
+                    'Сумата, с която стойността на договорите е нараснала над стойността при сключване, чрез анекси.',
+                },
                 {
                   value: growthMultiple(overruns.medianPct),
                   label: 'МЕДИАНА РАСТЕЖ',
-                  hint: '„×" = колко пъти спрямо стойността при сключване',
+                  summary:
+                    'Типичното нарастване — половината договори растат повече, половината по-малко.',
+                  hint: '„×" = колко пъти спрямо стойността при сключване.',
                 },
               ]}
               thumb={<ThumbOverruns />}
@@ -314,8 +331,16 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
               desc="Накъде текат парите — от възложители към сектори и изпълнители, и кои двойки концентрират най-голям обем."
               cta="Виж потоците"
               stats={[
-                { value: count(flows.authorities), label: 'ВЪЗЛОЖИТЕЛЯ' },
-                { value: count(flows.pairs), label: 'ВРЪЗКИ' },
+                {
+                  value: count(flows.authorities),
+                  label: 'ВЪЗЛОЖИТЕЛЯ',
+                  summary: 'Брой институции-възложители с поне един договор в данните.',
+                },
+                {
+                  value: count(flows.pairs),
+                  label: 'ВРЪЗКИ',
+                  summary: 'Брой уникални двойки възложител → изпълнител — потоците на парите.',
+                },
               ]}
               thumb={<ThumbFlows />}
             />
@@ -329,8 +354,17 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
               desc="Къде по области се концентрират разходите за обществени поръчки и как изглежда страната на глава от населението."
               cta="Виж картата"
               stats={[
-                { value: count(region.regionCount), label: 'ОБЛАСТИ' },
-                { value: pct(region.sofiaShare), label: 'В СОФИЯ' },
+                {
+                  value: count(region.regionCount),
+                  label: 'ОБЛАСТИ',
+                  summary: 'Брой области (NUTS3 региони), по които се разпределят разходите.',
+                },
+                {
+                  value: pct(region.sofiaShare),
+                  label: 'В СОФИЯ',
+                  summary:
+                    'Дял от разходите, концентриран в столицата спрямо всички области с посочен регион.',
+                },
               ]}
               thumb={<ThumbMap />}
             />
@@ -348,9 +382,15 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
                   value: formatYearlyGrowth(trend.avgYoy),
                   label: 'СРЕДЕН РЪСТ',
                   accent: true,
-                  hint: 'типичен годишен ръст на разходите',
+                  summary:
+                    'Типичният годишен ръст на разходите — медиана за последните 3 пълни години.',
+                  hint: 'Същата стойност като на страницата „Тренд".',
                 },
-                { value: formatPeakMonth(trend.peakPeriod), label: 'ПИК' },
+                {
+                  value: formatPeakMonth(trend.peakPeriod),
+                  label: 'ПИК',
+                  summary: 'Месецът с най-висока сумарна стойност на сключени договори.',
+                },
               ]}
               thumb={<ThumbTrends />}
             />
@@ -368,11 +408,15 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
                   value: opaque ? pct(opaque.latestShare) : '—',
                   label: opaque ? `НЕПРОЗРАЧНИ ${opaque.latestYear}` : 'НЕПРОЗРАЧНИ',
                   accent: true,
-                  hint: 'дял на процедурите с един участник или без обявяване',
+                  summary:
+                    'Дял на парите през непрозрачни процедури — един участник или без обявяване — за последната пълна година.',
+                  hint: 'Висок дял = по-слаба конкуренция.',
                 },
                 {
                   value: opaque ? formatPpChange(opaque.ppChange) : '—',
                   label: opaque ? `ОТ ${opaque.firstYear}` : 'ПРОМЯНА',
+                  summary:
+                    'Промяната в този дял спрямо първата година с данни — в процентни пунктове.',
                 },
               ]}
               thumb={<ThumbCompetition />}
