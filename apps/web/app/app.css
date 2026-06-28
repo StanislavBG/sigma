@@ -4159,7 +4159,7 @@ tbody td,
   padding: 0;
 }
 .trend-rail-item {
-  padding: 9px 16px;
+  padding: 7px 16px;
   border-top: 1px solid var(--rule-soft);
 }
 .trend-rail-row {
@@ -4194,11 +4194,33 @@ tbody td,
 .trend-rail-seller-arrow {
   color: var(--accent);
 }
-.trend-rail-subject {
+/* compact metric tags replacing the verbose subject paragraph — fits more rows */
+.trend-rail-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
   margin-top: 5px;
 }
-.trend-rail-subject a {
-  font-size: 11px;
+.trend-rail-sector {
+  font: 500 8.5px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.trend-rail-eu {
+  font: 600 8px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+  border-radius: 2px;
+  padding: 2px 4px;
+}
+.trend-rail-more {
+  margin-left: auto;
+  font: 500 8.5px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--ink-mid);
 }
 .trend-rail-empty {
   padding: 16px;

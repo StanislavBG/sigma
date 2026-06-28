@@ -128,6 +128,14 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
     ? (data.sectors.find((s) => s.code === data.scope.sector)?.short ?? data.scope.sector)
     : 'всички сектори';
 
+  // CPV division → short label, for the per-contract sector tag in the rail (compact scorecard).
+  const sectorShortByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of CPV_SECTORS) m.set(s.code, s.short ?? s.label);
+    for (const s of data.sectors) m.set(s.code, s.short); // prefer the corpus' own short names
+    return m;
+  }, [data.sectors]);
+
   // Year table figures (share + average + YoY bar), all derived from the loader's per-year rows.
   const grandTotal = data.years.reduce((a, y) => a + y.valueEur, 0);
   const YOY_BAR_MAX = 2.8; // a +280% YoY fills the bar
@@ -393,9 +401,15 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                       <span className="trend-rail-seller-arrow">→</span>{' '}
                       <Link to={`/companies/${c.bidderSlug}`}>{c.bidderDisplayName}</Link>
                     </div>
-                    <div className="trend-rail-subject">
-                      <Link to={`/contracts/${c.id}`} className="muted small">
-                        {c.subject || c.procedureLabel}
+                    <div className="trend-rail-tags">
+                      {c.sectorCode && sectorShortByCode.has(c.sectorCode) && (
+                        <span className="trend-rail-sector">
+                          {sectorShortByCode.get(c.sectorCode)}
+                        </span>
+                      )}
+                      {c.euFunded && <span className="trend-rail-eu">ЕС</span>}
+                      <Link to={`/contracts/${c.id}`} className="trend-rail-more">
+                        договор ↗
                       </Link>
                     </div>
                   </li>
