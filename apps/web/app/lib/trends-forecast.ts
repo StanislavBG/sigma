@@ -121,5 +121,9 @@ export function buildForecast(
     level.set(key, { value, count });
     out.push({ period: key, valueEur: value, contracts: count, forecast: true, partial: false });
   }
+  // No prior-year seasonal base for the first projected month (the actuals don't yet span a full year
+  // before the forecast start) → the projection opens at 0, a „ПРОГНОЗА" wedge crashing to zero that
+  // reads as a predicted collapse. Suppress the forecast entirely rather than render that false cliff.
+  if (out.length === 0 || out[0]!.valueEur === 0) return [];
   return out;
 }

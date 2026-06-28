@@ -44,15 +44,26 @@ export interface TrendKpis {
 const monthOf = (period: string): number => Number(period.slice(5, 7));
 const yearOf = (period: string): string => period.slice(0, 4);
 
-/** Tag the actual points as non-forecast and concatenate the projected tail. */
+/**
+ * Tag the actual points as non-forecast and concatenate the projected tail.
+ *
+ * The trailing partial as_of month(s) are dropped: their value is still being filled, so they read
+ * as an understated dip on the solid trend line and — because `buildForecast` starts the projection
+ * at the month after the last COMPLETE month — they otherwise collide with the first forecast point
+ * (duplicate React key, double-counted and mis-flagged as forecast in the quarter/year buckets). The
+ * forecast's leading month therefore REPLACES the partial month rather than duplicating it. Callers
+ * keep the UNFILTERED actuals for `computeKpis`/coverage; only the rendered line excludes the partial.
+ */
 export function combineSeries(actual: TrendPoint[], forecast: SeriesPoint[]): SeriesPoint[] {
-  const a: SeriesPoint[] = actual.map((p) => ({
-    period: p.period,
-    valueEur: p.valueEur,
-    contracts: p.contracts,
-    forecast: false,
-    partial: p.partial,
-  }));
+  const a: SeriesPoint[] = actual
+    .filter((p) => !p.partial)
+    .map((p) => ({
+      period: p.period,
+      valueEur: p.valueEur,
+      contracts: p.contracts,
+      forecast: false,
+      partial: false,
+    }));
   return [...a, ...forecast];
 }
 

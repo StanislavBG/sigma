@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { Form, Link, useNavigation, useSearchParams, useSubmit } from 'react-router';
 import { count, date, money, pct, signedPct } from '@sigma/shared';
 import { CPV_SECTORS } from '@sigma/config';
@@ -17,16 +17,6 @@ import {
   shortMonthLabel,
   type Step,
 } from '../lib/trends-series';
-
-const MONO = "'IBM Plex Mono', ui-monospace, monospace";
-
-const PANEL: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  background: 'var(--paper-warm)',
-  border: '1px solid var(--rule)',
-  borderRadius: 4,
-};
 
 export function meta(_: Route.MetaArgs) {
   return [
@@ -98,12 +88,16 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
   const [step, setStep] = useState<Step>('month');
   const [activeYear, setActiveYear] = useState<number | null>(null);
 
+  // KPIs + coverage use the UNFILTERED actuals; the rendered line drops the partial as_of month.
   const kpis = useMemo(() => computeKpis(data.points), [data.points]);
   const growth = useMemo(() => estimateYoyGrowth(data.points), [data.points]);
   const combined = useMemo(() => {
     const forecast = buildForecast(data.points, growth);
     return combineSeries(data.points, forecast);
   }, [data.points, growth]);
+  // When the seasonal base is absent buildForecast returns [] — the band, the ПРОГНОЗА legend swatch
+  // and the methodology sentence below are all gated on this so we never describe an absent forecast.
+  const hasForecast = useMemo(() => combined.some((p) => p.forecast), [combined]);
 
   const display = useMemo(
     () => aggregate(combined, step, activeYear),
@@ -127,6 +121,11 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
     activeYear ? `, ${activeYear} г.` : ''
   }. Колоните са броят договори, плътната линия е трендът на стойността, а пунктираният участък „ПРОГНОЗА" е сезонна прогноза. Точните стойности са в таблицата „По години" по-долу.`;
 
+  // Sub-meta for the "newest contracts" rail: the active sector scope, or all sectors.
+  const sectorMeta = data.scope.sector
+    ? (data.sectors.find((s) => s.code === data.scope.sector)?.short ?? data.scope.sector)
+    : 'всички сектори';
+
   // Year table figures (share + average + YoY bar), all derived from the loader's per-year rows.
   const grandTotal = data.years.reduce((a, y) => a + y.valueEur, 0);
   const YOY_BAR_MAX = 2.8; // a +280% YoY fills the bar
@@ -146,16 +145,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
         />
 
         {/* KPI strip */}
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 0,
-            margin: '0 0 18px',
-            borderTop: '1px solid var(--rule)',
-            borderBottom: '1px solid var(--rule)',
-          }}
-        >
+        <div className="trend-kpis">
           <Kpi value={money(kpis.totalValueEur)} label="ОБЩО ЗА ПЕРИОДА" />
           <Kpi value={count(kpis.contracts)} label="ДОГОВОРА" />
           <Kpi value={kpis.avgEur > 0 ? money(kpis.avgEur) : '—'} label="СРЕДЕН ДОГОВОР" />
@@ -167,20 +157,8 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
         </div>
 
         {/* filter bar: step toggle (client) + sector/funding (server) + active-year chip */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 14,
-            flexWrap: 'wrap',
-            padding: '10px 14px',
-            background: 'var(--paper-warm)',
-            border: '1px solid var(--rule)',
-            borderRadius: 4,
-            marginBottom: 14,
-          }}
-        >
-          <div role="group" aria-label="Стъпка на графиката" style={{ display: 'flex' }}>
+        <div className="trend-filterbar">
+          <div role="group" aria-label="Стъпка на графиката" className="trend-steps">
             {STEP_DEFS.map((s, i) => {
               const on = step === s.key;
               return (
@@ -192,11 +170,8 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                     setStep(s.key);
                     setActiveYear(null);
                   }}
+                  className="trend-step"
                   style={{
-                    font: `500 10px/1 ${MONO}`,
-                    letterSpacing: '0.08em',
-                    padding: '7px 11px',
-                    cursor: 'pointer',
                     border: '1px solid var(--rule)',
                     borderLeftWidth: i === 0 ? 1 : 0,
                     borderRadius:
@@ -216,10 +191,10 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
             role="group"
             aria-label="Филтри на тренда"
             onChange={(e) => submit(e.currentTarget)}
-            style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}
+            className="trend-filter-form"
           >
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-              <span style={{ color: 'var(--ink-soft)' }}>Сектор</span>
+            <label className="trend-filter-label">
+              <span>Сектор</span>
               <select name="sector" defaultValue={unknownSector ? '' : sel('sector')}>
                 <option value="">Всички сектори</option>
                 {data.sectors.map((s) => (
@@ -229,8 +204,8 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                 ))}
               </select>
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-              <span style={{ color: 'var(--ink-soft)' }}>Финансиране</span>
+            <label className="trend-filter-label">
+              <span>Финансиране</span>
               <select name="funding" defaultValue={sel('funding')}>
                 <option value="">Всякакво</option>
                 <option value="eu">Само с финансиране от ЕС</option>
@@ -243,28 +218,13 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
           </Form>
 
           {activeYear != null && (
-            <button
-              type="button"
-              onClick={() => setActiveYear(null)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                font: `500 10px/1 ${MONO}`,
-                padding: '7px 10px',
-                background: 'var(--ink)',
-                color: 'var(--paper)',
-                border: 'none',
-                borderRadius: 3,
-                cursor: 'pointer',
-              }}
-            >
+            <button type="button" onClick={() => setActiveYear(null)} className="trend-year-chip">
               {activeYear} ✕
             </button>
           )}
 
-          <div style={{ marginLeft: 'auto', font: `400 11px/1 ${MONO}`, color: 'var(--ink-mid)' }}>
-            Общо <b style={{ color: 'var(--ink)' }}>{money(data.totalValueEur)}</b> за периода
+          <div className="trend-total">
+            Общо <b>{money(data.totalValueEur)}</b> за периода
           </div>
         </div>
 
@@ -274,51 +234,27 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
 
         {unknownSector && (
           <Callout variant="warning" title="Непознат филтър">
-            <p style={{ margin: 0 }}>Избраният сектор не съществува. Показваме всички сектори.</p>
+            <p className="trend-callout-p">
+              Избраният сектор не съществува. Показваме всички сектори.
+            </p>
           </Callout>
         )}
 
         {/* main grid */}
         <div className="trend-grid">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+          <div className="trend-col">
             {/* chart panel */}
-            <div style={{ ...PANEL, padding: '14px 16px 10px' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'baseline',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <h2
-                  style={{
-                    margin: 0,
-                    fontFamily: 'var(--font-serif, Georgia, serif)',
-                    fontSize: 16,
-                    fontWeight: 600,
-                  }}
-                >
-                  {chartTitle}
-                </h2>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 11,
-                    font: `400 9.5px/1 ${MONO}`,
-                    color: 'var(--ink-soft)',
-                    flexWrap: 'wrap',
-                  }}
-                >
+            <div className="trend-panel trend-chart-panel">
+              <div className="trend-panel-head">
+                <h2 className="trend-panel-title">{chartTitle}</h2>
+                <div className="trend-legend">
                   <LegendItem swatch={<Swatch box />}>договори</LegendItem>
                   <LegendItem swatch={<Swatch line />}>тренд €</LegendItem>
-                  <LegendItem swatch={<Swatch dashed />}>прогноза</LegendItem>
-                  <span style={{ color: 'var(--ink-mid)' }}>{chartMeta}</span>
+                  {hasForecast && <LegendItem swatch={<Swatch dashed />}>прогноза</LegendItem>}
+                  <span className="trend-legend-meta">{chartMeta}</span>
                 </div>
               </div>
-              <div style={{ marginTop: 10 }}>
+              <div className="trend-chart-body">
                 {hasChart ? (
                   <TrendComboChart
                     points={display}
@@ -327,7 +263,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                     ariaLabel={ariaLabel}
                   />
                 ) : (
-                  <p className="muted" style={{ padding: '24px 0' }}>
+                  <p className="muted trend-chart-empty">
                     Няма достатъчно данни за избраните филтри.
                   </p>
                 )}
@@ -335,53 +271,25 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
             </div>
 
             {/* year table */}
-            <div style={{ ...PANEL, padding: '12px 16px' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'baseline',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <h2
-                  style={{
-                    margin: 0,
-                    fontFamily: 'var(--font-serif, Georgia, serif)',
-                    fontSize: 16,
-                    fontWeight: 600,
-                  }}
-                >
-                  По години
-                </h2>
-                <span style={{ font: `400 10px/1 ${MONO}`, color: 'var(--ink-soft)' }}>
-                  кликни година за филтър ↓
-                </span>
+            <div className="trend-panel trend-years-panel">
+              <div className="trend-panel-head">
+                <h2 className="trend-panel-title">По години</h2>
+                <span className="trend-hint">кликни година за филтър ↓</span>
               </div>
               {data.years.length > 0 ? (
-                <table
-                  className="trend-years"
-                  style={{ width: '100%', borderCollapse: 'collapse' }}
-                >
+                <table className="trend-years">
                   <caption className="sr-only">
                     Разходи по години: стойност, брой договори, среден договор, дял и промяна спрямо
                     предходната година. Изберете година, за да филтрирате графиката.
                   </caption>
                   <thead>
-                    <tr
-                      style={{
-                        font: `500 8.5px/1 ${MONO}`,
-                        letterSpacing: '0.1em',
-                        color: 'var(--ink-soft)',
-                      }}
-                    >
-                      <th style={{ textAlign: 'left', padding: '7px 8px 6px 0' }}>ГОДИНА</th>
-                      <th style={{ textAlign: 'right', padding: '7px 8px 6px' }}>СТОЙНОСТ</th>
-                      <th style={{ textAlign: 'right', padding: '7px 8px 6px' }}>ДОГОВОРИ</th>
-                      <th style={{ textAlign: 'right', padding: '7px 8px 6px' }}>СРЕДЕН</th>
-                      <th style={{ textAlign: 'right', padding: '7px 8px 6px' }}>ДЯЛ</th>
-                      <th style={{ textAlign: 'right', padding: '7px 0 6px 8px' }}>
-                        СПРЯМО ПРЕДХ.
-                      </th>
+                    <tr>
+                      <th>ГОДИНА</th>
+                      <th>СТОЙНОСТ</th>
+                      <th>ДОГОВОРИ</th>
+                      <th>СРЕДЕН</th>
+                      <th>ДЯЛ</th>
+                      <th>СПРЯМО ПРЕДХ.</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -398,82 +306,29 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                       return (
                         <tr
                           key={y.year}
-                          style={{
-                            borderBottom: '1px solid var(--rule-soft)',
-                            background: on ? 'var(--accent-bg)' : 'transparent',
-                          }}
+                          style={{ background: on ? 'var(--accent-bg)' : 'transparent' }}
                         >
-                          <td style={{ padding: '6px 8px 6px 0' }}>
+                          <td className="c-year">
                             <button
                               type="button"
                               aria-pressed={on}
                               onClick={() => setActiveYear(on ? null : yr)}
-                              style={{
-                                font: `600 12px/1 ${MONO}`,
-                                color: 'var(--accent)',
-                                background: 'none',
-                                border: 'none',
-                                padding: 0,
-                                cursor: 'pointer',
-                              }}
+                              className="trend-year-btn"
                             >
                               {y.year}
                             </button>
                             {y.partial && <span className="muted small"> частично</span>}
                           </td>
-                          <td
-                            style={{
-                              textAlign: 'right',
-                              padding: '6px 8px',
-                              font: `600 12px/1 ${MONO}`,
-                            }}
-                          >
-                            {money(y.valueEur)}
-                          </td>
-                          <td
-                            style={{
-                              textAlign: 'right',
-                              padding: '6px 8px',
-                              font: `400 11px/1 ${MONO}`,
-                              color: 'var(--ink-mid)',
-                            }}
-                          >
-                            {count(y.contracts)}
-                          </td>
-                          <td
-                            style={{
-                              textAlign: 'right',
-                              padding: '6px 8px',
-                              font: `400 11px/1 ${MONO}`,
-                              color: 'var(--ink-mid)',
-                            }}
-                          >
-                            {avg > 0 ? money(avg) : '—'}
-                          </td>
-                          <td
-                            style={{
-                              textAlign: 'right',
-                              padding: '6px 8px',
-                              font: `400 11px/1 ${MONO}`,
-                              color: 'var(--ink-soft)',
-                            }}
-                          >
-                            {pct(share)}
-                          </td>
-                          <td style={{ padding: '6px 0 6px 8px' }}>
-                            <span
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'flex-end',
-                                gap: 8,
-                              }}
-                            >
+                          <td className="c-value">{money(y.valueEur)}</td>
+                          <td className="c-num">{count(y.contracts)}</td>
+                          <td className="c-num">{avg > 0 ? money(avg) : '—'}</td>
+                          <td className="c-share">{pct(share)}</td>
+                          <td className="c-yoy">
+                            <span className="trend-yoy-cell">
                               <span
                                 aria-hidden="true"
+                                className="trend-yoy-bar"
                                 style={{
-                                  height: 5,
-                                  borderRadius: 3,
                                   width: barW,
                                   background:
                                     y.yoyPct == null
@@ -484,10 +339,8 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                                 }}
                               />
                               <span
+                                className="trend-yoy-pct"
                                 style={{
-                                  font: `500 10.5px/1 ${MONO}`,
-                                  minWidth: 52,
-                                  textAlign: 'right',
                                   color:
                                     y.yoyPct == null
                                       ? 'var(--ink-soft)'
@@ -506,120 +359,69 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                   </tbody>
                 </table>
               ) : (
-                <p className="muted" style={{ marginTop: 10 }}>
-                  Няма данни за избрания срез.
-                </p>
+                <p className="muted trend-years-empty">Няма данни за избрания срез.</p>
               )}
             </div>
           </div>
 
           {/* right rail: newest contracts */}
-          <div style={{ ...PANEL, padding: '12px 0 0' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                justifyContent: 'space-between',
-                padding: '0 16px 10px',
-                borderBottom: '1px solid var(--rule)',
-              }}
-            >
-              <h2
-                style={{
-                  margin: 0,
-                  fontFamily: 'var(--font-serif, Georgia, serif)',
-                  fontSize: 16,
-                  fontWeight: 600,
-                }}
-              >
-                Най-нови договори
-              </h2>
-              <a
-                href="/trends.rss"
-                style={{
-                  font: `500 9px/1 ${MONO}`,
-                  letterSpacing: '0.1em',
-                  color: 'var(--accent)',
-                }}
-              >
+          <div className="trend-panel trend-rail">
+            <div className="trend-rail-head">
+              <h2 className="trend-panel-title">Най-нови договори</h2>
+              <a href="/trends.rss" className="trend-rail-rss">
                 RSS ↗
               </a>
             </div>
+            <div className="trend-rail-submeta">Върхът на кривата · {sectorMeta}</div>
             {latest.length > 0 ? (
-              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              <ul className="trend-rail-list">
                 {latest.map((c) => (
-                  <li
-                    key={c.id}
-                    style={{ padding: '9px 16px', borderTop: '1px solid var(--rule-soft)' }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'baseline',
-                        justifyContent: 'space-between',
-                        gap: 10,
-                      }}
-                    >
-                      <span style={{ font: `500 9.5px/1 ${MONO}`, color: 'var(--ink-soft)' }}>
-                        {c.signedAt ? date(c.signedAt) : '—'}
-                      </span>
-                      <span
-                        style={{
-                          font: `600 11px/1 ${MONO}`,
-                          color: 'var(--ink)',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
+                  <li key={c.id} className="trend-rail-item">
+                    <div className="trend-rail-row">
+                      <span className="trend-rail-date">{c.signedAt ? date(c.signedAt) : '—'}</span>
+                      <span className="trend-rail-val">
                         {c.valueEur != null ? money(c.valueEur) : 'непотвърдена'}
                       </span>
                     </div>
-                    <div
-                      className="clamp1"
-                      style={{ marginTop: 5, fontSize: 11.5, fontWeight: 500 }}
-                    >
+                    <div className="clamp1 trend-rail-buyer">
                       <Link to={`/authorities/${c.authoritySlug}`}>{c.authorityName}</Link>
                     </div>
-                    <div
-                      className="clamp1"
-                      style={{ marginTop: 2, fontSize: 11, color: 'var(--ink-mid)' }}
-                    >
-                      <span style={{ color: 'var(--accent)' }}>→</span>{' '}
+                    <div className="clamp1 trend-rail-seller">
+                      <span className="trend-rail-seller-arrow">→</span>{' '}
                       <Link to={`/companies/${c.bidderSlug}`}>{c.bidderDisplayName}</Link>
                     </div>
-                    <div style={{ marginTop: 5 }}>
-                      <Link
-                        to={`/contracts/${c.id}`}
-                        className="muted small"
-                        style={{ fontSize: 11 }}
-                      >
+                    <div className="trend-rail-subject">
+                      <Link to={`/contracts/${c.id}`} className="muted small">
                         {c.subject || c.procedureLabel}
                       </Link>
                     </div>
                   </li>
                 ))}
+                <li className="trend-rail-end" aria-hidden="true">
+                  — край на списъка —
+                </li>
               </ul>
             ) : (
-              <p className="muted" style={{ padding: 16 }}>
-                Няма договори за избрания срез.
-              </p>
+              <p className="muted trend-rail-empty">Няма договори за избрания срез.</p>
             )}
           </div>
         </div>
 
         <Callout title="За покритието на данните">
-          <p style={{ margin: 0 }}>
+          <p className="trend-callout-p">
             Графиката включва договорите с валидна дата на сключване ({pct(data.coverage.pct)} от
-            тях). Последният период е непълен и е изключен от трендовата линия. Участъкът „ПРОГНОЗА"
-            е сезонна прогноза, изчислена от месечните данни (същият календарен месец предходна
-            година, умножен по средния годишен ръст {growthTxt}) — не са реални договори. Виж
-            методологията за подробности.
+            тях). Последният период е непълен и е изключен от трендовата линия.
+            {hasForecast && (
+              <>
+                {' '}
+                Участъкът „ПРОГНОЗА" е сезонна прогноза, изчислена от месечните данни (същият
+                календарен месец предходна година, умножен по средния годишен ръст {growthTxt}) — не
+                са реални договори.
+              </>
+            )}{' '}
+            Виж методологията за подробности.
           </p>
         </Callout>
-
-        <style>{`
-          .trend-grid { display: grid; grid-template-columns: minmax(0, 1.95fr) minmax(300px, 1fr); gap: 14px; }
-          @media (max-width: 880px) { .trend-grid { grid-template-columns: 1fr; } }
-        `}</style>
       </main>
     </>
   );
@@ -627,27 +429,16 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
 
 function Kpi({ value, label, accent }: { value: string; label: string; accent?: boolean }) {
   return (
-    <div style={{ padding: '12px 22px', borderLeft: '1px solid var(--rule)' }}>
-      <div style={{ font: `600 25px/1 ${MONO}`, color: accent ? 'var(--accent)' : 'var(--ink)' }}>
-        {value}
-      </div>
-      <div
-        style={{
-          marginTop: 4,
-          font: `500 9px/1 ${MONO}`,
-          letterSpacing: '0.14em',
-          color: 'var(--ink-soft)',
-        }}
-      >
-        {label}
-      </div>
+    <div className="trend-kpi">
+      <div className={`trend-kpi-val${accent ? ' is-accent' : ''}`}>{value}</div>
+      <div className="trend-kpi-label">{label}</div>
     </div>
   );
 }
 
-function LegendItem({ swatch, children }: { swatch: React.ReactNode; children: React.ReactNode }) {
+function LegendItem({ swatch, children }: { swatch: ReactNode; children: ReactNode }) {
   return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+    <span className="trend-legend-item">
       {swatch}
       {children}
     </span>
@@ -655,38 +446,7 @@ function LegendItem({ swatch, children }: { swatch: React.ReactNode; children: R
 }
 
 function Swatch({ box, line, dashed }: { box?: boolean; line?: boolean; dashed?: boolean }) {
-  if (box) {
-    return (
-      <span
-        aria-hidden="true"
-        style={{
-          width: 9,
-          height: 9,
-          background: 'color-mix(in oklch, var(--ink) 40%, transparent)',
-          display: 'inline-block',
-          borderRadius: 1,
-        }}
-      />
-    );
-  }
-  if (dashed) {
-    return (
-      <span
-        aria-hidden="true"
-        style={{ width: 14, borderTop: '1.6px dashed var(--accent)', display: 'inline-block' }}
-      />
-    );
-  }
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        width: 14,
-        height: 2.4,
-        background: 'var(--ink)',
-        display: 'inline-block',
-        borderRadius: 2,
-      }}
-    />
-  );
+  if (box) return <span aria-hidden="true" className="trend-sw-box" />;
+  if (dashed) return <span aria-hidden="true" className="trend-sw-dashed" />;
+  return <span aria-hidden="true" className="trend-sw-line" />;
 }

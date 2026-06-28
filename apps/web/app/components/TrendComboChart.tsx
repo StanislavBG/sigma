@@ -10,10 +10,12 @@ import type { DisplayPoint } from '../lib/trends-series';
 // over per-point hit boxes. (The simpler sparkline used by the entity/analytics embeds stays in
 // TrendChart.tsx — this is the full dashboard variant.)
 //
-// Colours come from the app's CSS tokens via inline `style` (SVG presentation attributes can't take
-// var()), keeping the SVG on-palette. The contract-count measure uses translucent ink rather than a
-// second hue, per the accessibility convention (no blue, don't lean on colour alone — the bars also
-// carry the right-axis legend + the tooltip count).
+// SVG presentation colours come from the app's CSS tokens via inline `style` (SVG fill/stroke can't
+// take a CSS class or `var()` through an attribute), keeping the SVG on-palette. The surrounding HTML
+// chrome (wrapper, tooltip, swatches) lives in app.css under the trends-dashboard block. The
+// contract-count measure uses translucent ink rather than a second hue, per the accessibility
+// convention (no blue, don't lean on colour alone — the bars also carry the right-axis legend + the
+// tooltip count).
 
 const BAR_ACTUAL = 'color-mix(in oklch, var(--ink) 30%, transparent)';
 const BAR_FORECAST = 'color-mix(in oklch, var(--ink) 14%, transparent)';
@@ -45,14 +47,14 @@ export function TrendComboChart({
   const hoverData = hover != null ? points[hover] : null;
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div className="trend-chart-wrap">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         width="100%"
         height="auto"
         role="img"
         aria-label={ariaLabel}
-        style={{ display: 'block', overflow: 'visible' }}
+        className="trend-svg"
         onMouseLeave={() => setHover(null)}
       >
         <title>{ariaLabel}</title>
@@ -170,6 +172,21 @@ export function TrendComboChart({
           strokeLinecap="round"
         />
 
+        {/* bold „ТРЕНД" tag on the moving-average line */}
+        {model.trendTag && (
+          <text
+            x={model.trendTag.x}
+            y={model.trendTag.y}
+            textAnchor="end"
+            fontSize={8.5}
+            fontWeight={600}
+            letterSpacing="0.12em"
+            style={{ fill: 'var(--ink)', fontFamily: MONO }}
+          >
+            ТРЕНД
+          </text>
+        )}
+
         {/* right contract-count axis */}
         <text
           x={width}
@@ -268,76 +285,25 @@ export function TrendComboChart({
 
       {hoverPt && hoverData && (
         <div
+          className="trend-tip"
           style={{
-            position: 'absolute',
-            pointerEvents: 'none',
             left: `${hoverPt.leftPct}%`,
             top: `${(Math.min(hoverPt.yValue, hoverPt.yCount) / height) * 100}%`,
-            transform: 'translate(-50%, -112%)',
-            background: 'var(--ink)',
-            color: 'var(--paper)',
-            padding: '7px 10px',
-            borderRadius: 3,
-            whiteSpace: 'nowrap',
-            zIndex: 5,
-            fontFamily: MONO,
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 9,
-              letterSpacing: '0.06em',
-              opacity: 0.8,
-            }}
-          >
+          <div className="trend-tip-head">
             {hoverData.label}
-            {hoverData.forecast && (
-              <span
-                style={{
-                  border: '1px solid color-mix(in oklch, var(--accent) 50%, transparent)',
-                  color: 'var(--accent)',
-                  borderRadius: 2,
-                  padding: '1px 4px',
-                  fontSize: 7.5,
-                  letterSpacing: '0.1em',
-                }}
-              >
-                ПРОГНОЗА
-              </span>
-            )}
+            {hoverData.forecast && <span className="trend-tip-badge">ПРОГНОЗА</span>}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 5 }}>
-            <span
-              style={{
-                width: 8,
-                height: 2.4,
-                background: 'var(--accent)',
-                display: 'inline-block',
-                borderRadius: 2,
-              }}
-            />
-            <span style={{ fontSize: 9, opacity: 0.8 }}>разходи</span>
-            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600 }}>
-              {money(hoverData.valueEur)}
-            </span>
+          <div className="trend-tip-row is-first">
+            <span className="trend-tip-sw-line" />
+            <span className="trend-tip-label">разходи</span>
+            <span className="trend-tip-val">{money(hoverData.valueEur)}</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 3 }}>
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                background: 'color-mix(in oklch, var(--paper) 65%, var(--ink))',
-                display: 'inline-block',
-                borderRadius: 1,
-              }}
-            />
-            <span style={{ fontSize: 9, opacity: 0.8 }}>договори</span>
-            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600 }}>
-              {fmtCount(Math.round(hoverData.contracts))}
-            </span>
+          <div className="trend-tip-row">
+            <span className="trend-tip-sw-box" />
+            <span className="trend-tip-label">договори</span>
+            <span className="trend-tip-val">{fmtCount(Math.round(hoverData.contracts))}</span>
           </div>
         </div>
       )}

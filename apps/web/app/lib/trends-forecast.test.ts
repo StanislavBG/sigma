@@ -72,4 +72,16 @@ describe('buildForecast', () => {
   it('returns nothing for an empty series', () => {
     expect(buildForecast([])).toEqual([]);
   });
+
+  it('suppresses the forecast when there is no prior-year seasonal base (no zero cliff)', () => {
+    // Only a partial first half-year — there is no month one year earlier to seed any projection,
+    // so every projected month would be 0. The forecast must be dropped, not rendered as a collapse.
+    const points: TrendPoint[] = Array.from({ length: 6 }, (_, i) => ({
+      period: `2024-${String(i + 1).padStart(2, '0')}`,
+      valueEur: 100,
+      contracts: 10,
+      partial: false,
+    }));
+    expect(buildForecast(points, { value: 1, count: 1 })).toEqual([]);
+  });
 });

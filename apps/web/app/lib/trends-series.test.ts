@@ -29,6 +29,26 @@ describe('combineSeries', () => {
     expect(out.slice(0, 2).every((d) => !d.forecast)).toBe(true);
     expect(out[2]!.forecast).toBe(true);
   });
+
+  it('drops the trailing partial month the forecast replaces (no duplicate period)', () => {
+    const actual: TrendPoint[] = [
+      { period: '2024-10', valueEur: 10, contracts: 5, partial: false },
+      { period: '2024-11', valueEur: 12, contracts: 6, partial: false },
+      { period: '2024-12', valueEur: 3, contracts: 2, partial: true }, // partial as_of tail
+    ];
+    // buildForecast starts the month after the last COMPLETE month → it covers the partial month.
+    const forecast: SeriesPoint[] = [
+      { period: '2024-12', valueEur: 14, contracts: 7, forecast: true, partial: false },
+    ];
+    const out = combineSeries(actual, forecast);
+    const periods = out.map((d) => d.period);
+    expect(periods).toEqual(['2024-10', '2024-11', '2024-12']); // partial dropped, not duplicated
+    expect(new Set(periods).size).toBe(periods.length); // no duplicate React key
+    const dec = out.filter((d) => d.period === '2024-12');
+    expect(dec).toHaveLength(1);
+    expect(dec[0]!.forecast).toBe(true); // the projection REPLACES the partial month
+    expect(dec[0]!.valueEur).toBe(14); // not the understated partial value (3)
+  });
 });
 
 describe('aggregate', () => {
