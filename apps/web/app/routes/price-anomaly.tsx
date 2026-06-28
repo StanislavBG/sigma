@@ -29,7 +29,7 @@ export function meta({ matches }: Route.MetaArgs) {
     path: '/price-anomaly',
     title: 'Раздути спрямо сходни — СИГМА',
     description:
-      'Кои договори са необичайно скъпи спрямо сходни поръчки в същата CPV категория — робастен log-MAD анализ по кохорти (n≥30, z≥3). Голяма стойност не означава надплащане: всеки маркиран договор е за проверка спрямо сходните си, проследим до конкретния договор.',
+      'Кои договори са необичайно скъпи спрямо сходни поръчки в същата CPV категория и същия период (±1 година) — робастен log-MAD анализ по кохорти (n≥30, z≥3), коригиран за инфлация. Голяма стойност не означава надплащане: всеки маркиран договор е за проверка спрямо сходните си по време, проследим до конкретния договор.',
   });
 }
 
@@ -260,9 +260,16 @@ function Scorecard({
   rank: number;
   cohort?: CohortStatRow;
 }) {
-  // Prefer the cohort's stored median; fall back to deriving it from value/mult when the flagged
-  // contract's cohort fell outside the browsed set (so the strip is never blank, never fabricated).
-  const medianEur = cohort?.medianEur ?? (outlier.mult > 0 ? outlier.valueEur / outlier.mult : 0);
+  // The flagged contract was judged against its ±1-year window, so the card's median + multiple are the
+  // WINDOW median (honest: mult = value / windowMedian). Fall back to deriving it from value/mult only if
+  // a pre-0004 row lacks the stored window median (so the strip is never blank, never fabricated). The
+  // distribution dots come from the cohort's ALL-PERIOD sample — context around the windowed median.
+  const medianEur =
+    outlier.windowMedianEur > 0
+      ? outlier.windowMedianEur
+      : outlier.mult > 0
+        ? outlier.valueEur / outlier.mult
+        : 0;
   const sample = cohort?.sample ?? [];
   const strip = cardStripGeometry(sample, medianEur, outlier.valueEur);
   const cohortName = cohort?.label ?? outlier.cpvDescription ?? outlier.code;
@@ -275,7 +282,7 @@ function Scorecard({
         </div>
         <div className="pa-card-mult">
           <div className="pa-card-mult-v">{fmtMult(outlier.mult)}</div>
-          <div className="pa-card-mult-l">спрямо медиана</div>
+          <div className="pa-card-mult-l">спрямо медиана (±1 г.)</div>
         </div>
       </div>
       <div className="clamp2 pa-card-title">
@@ -315,7 +322,7 @@ function Scorecard({
           <dd className="pa-fig-val">{moneyBare(outlier.valueEur)}</dd>
         </div>
         <div>
-          <dt>МЕДИАНА</dt>
+          <dt>МЕДИАНА ±1Г</dt>
           <dd className="pa-fig-med">{moneyBare(medianEur)}</dd>
         </div>
         <div className="pa-r">
@@ -324,6 +331,122 @@ function Scorecard({
         </div>
       </dl>
     </li>
+  );
+}
+
+// ── Methodology — the complete, honest „как се смята" block (scannable: headings + short paragraphs) ──
+function Methodology() {
+  return (
+    <section className="pa-panel pa-method" aria-labelledby="pa-method-h">
+      <div className="pa-panel-head pa-panel-head--col">
+        <div className="pa-kicker">— Методология · как се смята</div>
+        <h2 id="pa-method-h" className="pa-panel-title">
+          Как четем „<em>раздут</em>" — изцяло и честно
+        </h2>
+      </div>
+      <div className="pa-method-body">
+        <div className="pa-method-block">
+          <h3>1 · Какво е „кохорта" (CPV + ±1 година)</h3>
+          <p>
+            Кохортата на всеки договор са поръчките в <strong>същата 5-цифрена CPV група</strong> (напр.
+            45233 — пътно строителство), подписани в рамките на <strong>±1 година</strong> от датата на
+            самия договор. Това е плъзгащ се прозорец — всеки договор си има собствена кохорта от
+            съвременници.
+          </p>
+          <p>
+            <strong>Защо ±1 година:</strong> цените растат през годините. Ако сравним договор от 2018 г.
+            с връстници от 2024 г., бъркаме инфлацията с аномалия — един просто по-нов договор би
+            изглеждал „скъп". Прозорецът държи времето приблизително постоянно, така че сигналът е „скъп
+            спрямо сходни по време", а не „скъп спрямо цялата история".
+          </p>
+        </div>
+
+        <div className="pa-method-block">
+          <h3>2 · Само обща стойност — няма количества</h3>
+          <p>
+            Източникът няма единични цени или количества, само <strong>общата стойност</strong> на
+            договора (amount_eur). Затова мерим „голям спрямо сходни по време", а не надплащане за
+            единица. <strong>Висока стойност ≠ надплащане</strong> — голям договор може да е напълно
+            законен голям обхват.
+          </p>
+        </div>
+
+        <div className="pa-method-block">
+          <h3>3 · Робастната статистика (log + MAD + z)</h3>
+          <p>
+            Стойностите се разпъват с порядъци, затова работим върху <strong>log(стойност)</strong>. За
+            всеки прозорец вземаме медианата и <strong>MAD</strong> (median absolute deviation — медиана
+            на абсолютните отклонения). Робастната z-оценка е{' '}
+            <code>z = 0,6745 · (ln v − медиана(ln v)) / MAD</code>.
+          </p>
+          <p>
+            <strong>Защо MAD, а не стандартно отклонение:</strong> MAD е устойчив — единичен гигантски
+            договор не „издува" мярката и не скрива останалите аномалии, както би направило средно ±
+            стандартно отклонение. Маркираме при <strong>z ≥ 3</strong> и само{' '}
+            <strong>горната опашка</strong> (v над медианата) — скъпите, никога евтините.
+          </p>
+        </div>
+
+        <div className="pa-method-block">
+          <h3>4 · Минимум n ≥ 30 (върху прозореца)</h3>
+          <p>
+            Договор се оценява само ако <strong>прозорецът му съдържа ≥ 30 поръчки</strong>. Под този
+            праг съвременните съседи са твърде малко, за да е надеждна оценката. Изключват се честно:{' '}
+            <strong>редки CPV-години</strong> (малко поръчки в тази категория за тази година) и{' '}
+            <strong>договори без дата на подписване</strong> (не могат да се поставят във времето). Те не
+            се маркират — просто не се оценяват.
+          </p>
+        </div>
+
+        <div className="pa-method-block">
+          <h3>5 · Как се чете всяко число</h3>
+          <ul>
+            <li>
+              <strong>ТИПИЧНА</strong> — медианата на групата за <em>целия период</em> (контекст в
+              таблицата; ориентир „колко обикновено струва").
+            </li>
+            <li>
+              <strong>МЕДИАНА ±1Г / ×мн.</strong> — медианата на ±1-годишния прозорец и колко пъти над нея
+              е договорът. Точно срещу тази стойност е засечен.
+            </li>
+            <li>
+              <strong>ПЕРСЕНТИЛ</strong> — мястото на договора сред връстниците му по време (p99 = сред
+              най-скъпите в прозореца).
+            </li>
+            <li>
+              <strong>РАЗДУТ ДЯЛ</strong> — Σ(стойност на маркираните) / Σ(стойност на групата): каква
+              част от парите в категорията седят в маркирани договори (по стойност, не по брой).
+            </li>
+            <li>
+              <strong>Лентата на разпределението</strong> е <em>контекст за целия период</em> — показва
+              формата на категорията. Засичането обаче е <em>в прозореца</em>; затова точка може да
+              изглежда висока на лентата, но да е нормална спрямо своите съвременници.
+            </li>
+          </ul>
+        </div>
+
+        <div className="pa-method-block">
+          <h3>6 · Ограничения и честни уговорки</h3>
+          <ul>
+            <li>
+              <strong>Рамкови споразумения и многогодишни договори</strong> изглеждат огромни спрямо
+              връстници „на доставка" — голям обхват, не задължително надплащане.
+            </li>
+            <li>
+              <strong>Грешно етикетиране на CPV</strong> може да сложи договор в чужда категория и да
+              изкриви сравнението.
+            </li>
+            <li>
+              <strong>Малки прозорци</strong> (близо до 30) дават по-шумна медиана от пълните категории.
+            </li>
+            <li>
+              Всеки маркиран договор е <strong>за проверка</strong>, не доказателство. Повече за метода и
+              източниците — в <Link to="/methodology">методологията</Link>.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -384,10 +507,10 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
             <div className="pa-hk">
               <dd className="pa-hk-v">{count(kpis.cohortCount)}</dd>
               <dt className="pa-hk-l">
-                CPV ГРУПИ
+                CPV ГРУПИ · ±1 Г.
                 <MetricInfo
-                  title="CPV групи"
-                  summary="Брой 5-цифрени CPV кохорти с достатъчно сходни поръчки (n≥30), за да се прецени дали даден договор е необичайно скъп."
+                  title="CPV групи · ±1 година"
+                  summary="Кохортата на всеки договор са сходните поръчки в същата 5-цифрена CPV група, подписани в рамките на ±1 година от него. Прозорецът държи времето приблизително постоянно, така че сравнението е спрямо съвременници, а не спрямо цялата история (инфлацията изкривява). Тук се брои колко CPV групи имат достатъчно такива съседи."
                 />
               </dt>
             </div>
@@ -396,8 +519,8 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
               <dt className="pa-hk-l">
                 МИН. КОХОРТА
                 <MetricInfo
-                  title="Минимална кохорта"
-                  summary="Кохорта се анализира само ако има поне 30 поръчки с потвърдена стойност — под този праг разпределението е твърде малко, за да е надеждно."
+                  title="Минимална кохорта (в прозореца)"
+                  summary="Договор се оценява само ако в неговия ±1-годишен прозорец от същата CPV група има поне 30 сходни поръчки с потвърдена стойност. Под този праг съвременните съседи са твърде малко, за да е надеждна оценката — затова редки CPV-години и договори без дата на подписване се изключват от засичането (честно, не маркирани)."
                 />
               </dt>
             </div>
@@ -408,7 +531,7 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
                 <MetricInfo
                   align="end"
                   title="Лог-MAD праг"
-                  summary="Робастна z-оценка върху log(стойност): договор се маркира при z≥3 над медианата, измерено чрез MAD (устойчиво на единични екстремни стойности, за разлика от средно ± стандартно отклонение)."
+                  summary="Робастна z-оценка върху log(стойност): договор се маркира при z≥3 над медианата на сходните си по време (±1 г.) поръчки, измерено чрез MAD (устойчиво на единични екстремни стойности, за разлика от средно ± стандартно отклонение). Само горната опашка — скъпи, не евтини."
                   readout="Висока стойност ≠ надплащане — данните нямат количества, затова е „за проверка“, не доказателство."
                 />
               </dt>
@@ -491,6 +614,8 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
             Картончето маркира за проверка, не доказва злоупотреба.
           </p>
         </section>
+
+        <Methodology />
 
         <p className="small muted source-line">Данни: Регистър на обществените поръчки (АОП)</p>
       </main>

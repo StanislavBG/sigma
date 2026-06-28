@@ -2477,8 +2477,65 @@ details.row .body .signal .why {
   color: var(--accent);
 }
 
+/* methodology block — the complete „как се смята" section */
+.pa-method {
+  margin-top: 22px;
+}
+.pa-method-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 26px;
+  padding: 16px 20px 20px;
+}
+.pa-method-block {
+  min-width: 0;
+}
+.pa-method-block h3 {
+  margin: 0 0 6px;
+  font: 600 12px/1.3 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.pa-method-block p {
+  margin: 0 0 8px;
+  font: 400 12.5px/1.55 var(--font-sans);
+  color: var(--ink-mid);
+}
+.pa-method-block p:last-child {
+  margin-bottom: 0;
+}
+.pa-method-block strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.pa-method-block code {
+  font: 500 11.5px/1.4 var(--font-mono);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.pa-method-block ul {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+.pa-method-block li {
+  margin: 0 0 6px;
+  font: 400 12.5px/1.5 var(--font-sans);
+  color: var(--ink-mid);
+}
+.pa-method-block li:last-child {
+  margin-bottom: 0;
+}
+
 @media (max-width: 900px) {
   .pa-toprow {
+    grid-template-columns: 1fr;
+  }
+  .pa-method-body {
     grid-template-columns: 1fr;
   }
   .pa-mast-title {
