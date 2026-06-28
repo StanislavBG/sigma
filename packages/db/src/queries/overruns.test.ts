@@ -184,7 +184,7 @@ describe('getTopOverruns', () => {
 });
 
 // ── getOverrunsAnalytics ───────────────────────────────────────────────────────────
-// Six bounded statements; the fake keys each off a unique SQL marker (see overruns.ts) and serves the
+// Five bounded statements; the fake keys each off a unique SQL marker (see overruns.ts) and serves the
 // right shaped result via .all (lists) or .first (single-row aggregates). Marker presence is also the
 // "no duplicate COUNT / each aggregate is one bounded query" guard.
 const MARKERS = {
@@ -193,7 +193,6 @@ const MARKERS = {
   median: 'median_pct', // window-function median
   authority: 'GROUP BY t.authority_id',
   sector: 'GROUP BY division',
-  year: 'GROUP BY year',
 } as const;
 
 type AnalyticsFakes = {
@@ -202,7 +201,6 @@ type AnalyticsFakes = {
   median?: { median_pct: number };
   authority?: Record<string, unknown>[];
   sector?: Record<string, unknown>[];
-  year?: Record<string, unknown>[];
 };
 
 function fakeAnalyticsDb(f: AnalyticsFakes = {}): { db: D1Database; sql: string[] } {
@@ -226,7 +224,6 @@ function fakeAnalyticsDb(f: AnalyticsFakes = {}): { db: D1Database; sql: string[
             return { results: (f.leaderboard ?? [rawRow()]) as T[] };
           if (q.includes(MARKERS.authority)) return { results: (f.authority ?? []) as T[] };
           if (q.includes(MARKERS.sector)) return { results: (f.sector ?? []) as T[] };
-          if (q.includes(MARKERS.year)) return { results: (f.year ?? []) as T[] };
           return { results: [] as T[] };
         },
         async first<T>() {
@@ -241,12 +238,12 @@ function fakeAnalyticsDb(f: AnalyticsFakes = {}): { db: D1Database; sql: string[
 }
 
 describe('getOverrunsAnalytics', () => {
-  it('issues exactly six bounded queries, one per section', async () => {
+  it('issues exactly five bounded queries, one per section', async () => {
     const { db, sql } = fakeAnalyticsDb();
 
     await getOverrunsAnalytics(db, { by: 'absolute' });
 
-    expect(sql).toHaveLength(6);
+    expect(sql).toHaveLength(5);
     for (const marker of Object.values(MARKERS)) {
       expect(sql.some((q) => q.includes(marker))).toBe(true);
     }
@@ -310,14 +307,14 @@ describe('getOverrunsAnalytics', () => {
     expect(Number.isFinite(corpus.shareOfSigning)).toBe(true);
   });
 
-  it('maps authority rows to slugs and clean names', async () => {
+  it('maps authority rows to slugs, clean names and €-weighted growth', async () => {
     const { db } = fakeAnalyticsDb({
       authority: [
         {
           authority_id: 'auth:000695089',
           authority_name: 'Министерство на финансите',
           total_overrun_eur: 5_000_000,
-          avg_pct: 0.3,
+          signing_eur: 20_000_000,
           count: 7,
         },
       ],
@@ -329,36 +326,52 @@ describe('getOverrunsAnalytics', () => {
     expect(byAuthority[0]!.authoritySlug).toBe('000695089');
     expect(byAuthority[0]!.totalOverrunEur).toBe(5_000_000);
     expect(byAuthority[0]!.count).toBe(7);
+    // growth = SUM(delta) / SUM(signing) = 5M / 20M, not an average of per-contract pcts.
+    expect(byAuthority[0]!.growth).toBeCloseTo(0.25);
   });
 
-  it('labels CPV divisions and falls back for unknown / missing codes', async () => {
+  it('guards authority growth against a zero signing denominator', async () => {
+    const { db } = fakeAnalyticsDb({
+      authority: [
+        {
+          authority_id: 'auth:1',
+          authority_name: 'X',
+          total_overrun_eur: 1_000,
+          signing_eur: 0,
+          count: 1,
+        },
+      ],
+    });
+    const { byAuthority } = await getOverrunsAnalytics(db, { by: 'absolute' });
+    expect(byAuthority[0]!.growth).toBe(0);
+    expect(Number.isFinite(byAuthority[0]!.growth)).toBe(true);
+  });
+
+  it('labels CPV divisions, assigns the works/goods/services bucket and €-weighted growth', async () => {
     const { db } = fakeAnalyticsDb({
       sector: [
-        { division: '45', total_overrun_eur: 8_000_000, avg_pct: 0.4, count: 12 },
-        { division: '99', total_overrun_eur: 2_000_000, avg_pct: 0.2, count: 3 },
-        { division: null, total_overrun_eur: 1_000_000, avg_pct: 0.1, count: 1 },
+        { division: '45', risk_eur: 8_000_000, signing_eur: 16_000_000, count: 12 }, // works
+        { division: '72', risk_eur: 4_000_000, signing_eur: 10_000_000, count: 6 }, // services
+        { division: '33', risk_eur: 3_000_000, signing_eur: 6_000_000, count: 5 }, // goods
+        { division: '99', risk_eur: 2_000_000, signing_eur: 4_000_000, count: 3 }, // not in taxonomy
+        { division: null, risk_eur: 1_000_000, signing_eur: 2_000_000, count: 1 }, // NULL cpv_code
       ],
     });
 
     const { bySector } = await getOverrunsAnalytics(db, { by: 'absolute' });
 
+    expect(bySector[0]!.code).toBe('45');
     expect(bySector[0]!.label).not.toBe('45'); // resolved to the curated/official CPV label
-    expect(bySector[1]!.label).toBe('Сектор 99'); // present in corpus but not in the taxonomy
-    expect(bySector[2]!.label).toBe('Без код'); // NULL cpv_code
-  });
-
-  it('passes through the by-year trend buckets', async () => {
-    const { db } = fakeAnalyticsDb({
-      year: [
-        { year: '2021', total_overrun_eur: 3_000_000, count: 4 },
-        { year: 'Неизвестна', total_overrun_eur: 500_000, count: 2 },
-      ],
-    });
-
-    const { byYear } = await getOverrunsAnalytics(db, { by: 'absolute' });
-
-    expect(byYear.map((r) => r.year)).toEqual(['2021', 'Неизвестна']);
-    expect(byYear[0]!.totalOverrunEur).toBe(3_000_000);
+    expect(bySector[0]!.bucket).toBe('works');
+    expect(bySector[0]!.riskEur).toBe(8_000_000);
+    expect(bySector[0]!.contracts).toBe(12);
+    expect(bySector[0]!.growth).toBeCloseTo(0.5); // 8M / 16M
+    expect(bySector[1]!.bucket).toBe('services');
+    expect(bySector[2]!.bucket).toBe('goods');
+    expect(bySector[3]!.label).toBe('Сектор 99'); // present in corpus but not in the taxonomy
+    expect(bySector[3]!.bucket).toBe('other');
+    expect(bySector[4]!.label).toBe('Без код'); // NULL cpv_code
+    expect(bySector[4]!.bucket).toBe('other');
   });
 
   it('returns honest empty breakdowns when there are no overruns', async () => {
@@ -373,17 +386,15 @@ describe('getOverrunsAnalytics', () => {
       median: { median_pct: 0 },
       authority: [],
       sector: [],
-      year: [],
     });
 
-    const { rows, byAuthority, bySector, byYear, corpus } = await getOverrunsAnalytics(db, {
+    const { rows, byAuthority, bySector, corpus } = await getOverrunsAnalytics(db, {
       by: 'absolute',
     });
 
     expect(rows).toHaveLength(0);
     expect(byAuthority).toHaveLength(0);
     expect(bySector).toHaveLength(0);
-    expect(byYear).toHaveLength(0);
     expect(corpus.count).toBe(0);
   });
 });

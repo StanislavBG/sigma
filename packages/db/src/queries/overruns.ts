@@ -9,14 +9,14 @@
 // WHERE (data-quality guard + makes the pct division safe); the JS mapping double-guards so a stray
 // non-positive signing can never produce an Infinity/NaN pct.
 //
-// The page issues exactly six bounded queries (see getOverrunsAnalytics): one leaderboard (LIMIT-ed),
+// The page issues exactly five bounded queries (see getOverrunsAnalytics): one leaderboard (LIMIT-ed),
 // one corpus aggregate (single pass, conditional SUM/AVG — no duplicate COUNT), one median, and one
-// each for the by-authority / by-sector / by-year breakdowns (each GROUP BY is bounded by its key
-// cardinality and the two leaderboards carry a LIMIT). The shared OVERRUN_WHERE keeps every
-// aggregate's definition of "ballooned" identical.
+// each for the by-authority and by-sector breakdowns (each GROUP BY is bounded by its key cardinality
+// and the leaderboard carries a LIMIT). The shared OVERRUN_WHERE keeps every aggregate's definition of
+// "ballooned" identical. The route adds one more bounded query for the shown contracts' annex history.
 
 import { cleanName, entityName } from '@sigma/shared';
-import { CPV_SECTORS } from '@sigma/config';
+import { CPV_SECTORS, cpvBucket, type CpvBucket } from '@sigma/config';
 import { authoritySlug, companySlug, contractSlug } from './identity';
 
 export interface OverrunRow {
@@ -101,22 +101,26 @@ export interface OverrunAuthorityRow {
   authorityName: string;
   authoritySlug: string;
   totalOverrunEur: number;
-  avgPct: number;
   count: number;
+  /** Aggregate growth for the authority = SUM(delta) / SUM(signing) — the real ballooning ratio of
+   *  its overrun portfolio, NOT an average of per-contract pcts (which over-weights tiny contracts). */
+  growth: number;
 }
 
 export interface OverrunSectorRow {
-  division: string;
+  /** 2-digit CPV division code. */
+  code: string;
+  /** Curated CPV-division label (short name for featured divisions, else the official BG label). */
   label: string;
-  totalOverrunEur: number;
-  avgPct: number;
-  count: number;
-}
-
-export interface OverrunYearRow {
-  year: string;
-  totalOverrunEur: number;
-  count: number;
+  /** Works / goods / services / other — drives the ranked-list dot colour + treemap warm ramp anchor. */
+  bucket: CpvBucket;
+  /** € at risk = SUM(delta) of the division's overrun contracts (the treemap cell area). */
+  riskEur: number;
+  /** Aggregate growth = SUM(delta) / SUM(signing) over the division's overrun contracts (truthful
+   *  €-weighted ratio, not an average of per-contract pcts). */
+  growth: number;
+  /** Number of overrun contracts in the division. */
+  contracts: number;
 }
 
 export interface OverrunsAnalytics {
@@ -124,7 +128,6 @@ export interface OverrunsAnalytics {
   rows: OverrunRow[];
   byAuthority: OverrunAuthorityRow[];
   bySector: OverrunSectorRow[];
-  byYear: OverrunYearRow[];
 }
 
 export interface OverrunsAnalyticsParams {
@@ -138,7 +141,6 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 const AUTHORITY_LIMIT = 20;
 const SECTOR_LIMIT = 15;
-const YEAR_UNKNOWN = 'Неизвестна';
 
 // The overrun predicate, shared by every query so they never disagree on what counts as a ballooned
 // contract. Uses only `contracts` columns (aliased `c`) so it works both as a WHERE and as a CASE
@@ -154,9 +156,11 @@ const OVERRUN_WHERE = `c.signing_value_eur IS NOT NULL
        AND c.current_value_eur > c.signing_value_eur
        AND c.signing_value_eur >= ${OVERRUN_MIN_SIGNING_EUR}`;
 
-// delta / pct expressions, reused across aggregates so the maths is defined once.
+// delta / pct / signing expressions, reused across aggregates so the maths is defined once. SIGNING is
+// the per-row signed value; SUM(DELTA)/SUM(SIGNING) gives the truthful €-weighted growth of a group.
 const DELTA = '(c.current_value_eur - c.signing_value_eur)';
 const PCT = '(c.current_value_eur - c.signing_value_eur) / c.signing_value_eur';
+const SIGNING = 'c.signing_value_eur';
 
 interface RawRow {
   contract_id: string;
@@ -389,26 +393,21 @@ interface AuthorityRaw {
   authority_id: string;
   authority_name: string;
   total_overrun_eur: number;
-  avg_pct: number;
+  signing_eur: number;
   count: number;
 }
 
 interface SectorRaw {
   division: string | null;
-  total_overrun_eur: number;
-  avg_pct: number;
+  risk_eur: number;
+  signing_eur: number;
   count: number;
 }
 
-interface YearRaw {
-  year: string;
-  total_overrun_eur: number;
-  count: number;
-}
-
-// The full analytical page in six bounded queries. None duplicates another's COUNT/SUM: the corpus
+// The full analytical page in five bounded queries. None duplicates another's COUNT/SUM: the corpus
 // totals come from the single conditional-aggregate pass, the leaderboard carries a LIMIT, and every
-// GROUP BY is bounded by its key (authorities/sectors LIMIT-ed, years are a tiny fixed set).
+// GROUP BY is bounded by its key (authorities/sectors LIMIT-ed). The authority and sector aggregates
+// both carry SUM(signing) alongside SUM(delta) so the displayed РАСТЕЖ is the real €-weighted growth.
 export async function getOverrunsAnalytics(
   db: D1Database,
   { by, leaderboardLimit, authorityLimit, sectorLimit }: OverrunsAnalyticsParams,
@@ -417,7 +416,7 @@ export async function getOverrunsAnalytics(
   const authLimit = clampLimit(authorityLimit, AUTHORITY_LIMIT, MAX_LIMIT);
   const secLimit = clampLimit(sectorLimit, SECTOR_LIMIT, MAX_LIMIT);
 
-  const [rowsRes, corpusRow, medianRow, authRes, sectorRes, yearRes] = await Promise.all([
+  const [rowsRes, corpusRow, medianRow, authRes, sectorRes] = await Promise.all([
     db.prepare(leaderboardSql(by)).bind(boardLimit).all<RawRow>(),
     // Single pass over contracts: conditional SUM/AVG so the overrun totals and the corpus signing
     // denominator come from ONE scan, never a duplicate COUNT. `corpus_signing_eur` is corpus-wide
@@ -452,11 +451,13 @@ export async function getOverrunsAnalytics(
          WHERE rn IN ((n + 1) / 2, (n + 2) / 2)`,
       )
       .first<{ median_pct: number }>(),
+    // By-authority: total overrun €, the SUM of signing values (the РАСТЕЖ denominator → real
+    // €-weighted growth, not avg-of-pcts), and the contract count. ONE bounded GROUP BY, LIMIT-ed.
     db
       .prepare(
         `SELECT t.authority_id AS authority_id, a.name AS authority_name,
                 SUM(${DELTA}) AS total_overrun_eur,
-                AVG(${PCT}) AS avg_pct,
+                SUM(${SIGNING}) AS signing_eur,
                 COUNT(*) AS count
          FROM contracts c
          JOIN tenders t ON t.id = c.tender_id
@@ -468,33 +469,24 @@ export async function getOverrunsAnalytics(
       )
       .bind(authLimit)
       .all<AuthorityRaw>(),
+    // By-sector (CPV division): € at risk (SUM delta), the SUM of signing (growth denominator) and the
+    // contract count. ONE bounded GROUP BY over OVERRUN_WHERE rows, ordered by risk desc, LIMIT-ed. The
+    // works/goods/services bucket is resolved in JS from @sigma/config (no per-row CASE in SQL).
     db
       .prepare(
         `SELECT substr(t.cpv_code, 1, 2) AS division,
-                SUM(${DELTA}) AS total_overrun_eur,
-                AVG(${PCT}) AS avg_pct,
+                SUM(${DELTA}) AS risk_eur,
+                SUM(${SIGNING}) AS signing_eur,
                 COUNT(*) AS count
          FROM contracts c
          JOIN tenders t ON t.id = c.tender_id
          WHERE ${OVERRUN_WHERE}
          GROUP BY division
-         ORDER BY total_overrun_eur DESC
+         ORDER BY risk_eur DESC
          LIMIT ?`,
       )
       .bind(secLimit)
       .all<SectorRaw>(),
-    db
-      .prepare(
-        `SELECT CASE WHEN substr(c.signed_at, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
-                     THEN substr(c.signed_at, 1, 4) ELSE '${YEAR_UNKNOWN}' END AS year,
-                SUM(${DELTA}) AS total_overrun_eur,
-                COUNT(*) AS count
-         FROM contracts c
-         WHERE ${OVERRUN_WHERE}
-         GROUP BY year
-         ORDER BY year`,
-      )
-      .all<YearRaw>(),
   ]);
 
   const totalOverrunEur = corpusRow?.total_overrun_eur ?? 0;
@@ -512,26 +504,21 @@ export async function getOverrunsAnalytics(
     authorityName: cleanName(r.authority_name),
     authoritySlug: authoritySlug(r.authority_id),
     totalOverrunEur: r.total_overrun_eur,
-    avgPct: r.avg_pct,
     count: r.count,
+    growth: r.signing_eur > 0 ? r.total_overrun_eur / r.signing_eur : 0,
   }));
 
   const bySector: OverrunSectorRow[] = sectorRes.results.map((r) => {
-    const division = (r.division ?? '').trim();
+    const code = (r.division ?? '').trim();
     return {
-      division,
-      label: SECTOR_LABELS.get(division) ?? (division ? `Сектор ${division}` : 'Без код'),
-      totalOverrunEur: r.total_overrun_eur,
-      avgPct: r.avg_pct,
-      count: r.count,
+      code,
+      label: SECTOR_LABELS.get(code) ?? (code ? `Сектор ${code}` : 'Без код'),
+      bucket: cpvBucket(code),
+      riskEur: r.risk_eur,
+      growth: r.signing_eur > 0 ? r.risk_eur / r.signing_eur : 0,
+      contracts: r.count,
     };
   });
 
-  const byYear: OverrunYearRow[] = yearRes.results.map((r) => ({
-    year: r.year,
-    totalOverrunEur: r.total_overrun_eur,
-    count: r.count,
-  }));
-
-  return { corpus, rows: mapOverrunRows(rowsRes.results), byAuthority, bySector, byYear };
+  return { corpus, rows: mapOverrunRows(rowsRes.results), byAuthority, bySector };
 }

@@ -34,6 +34,10 @@
      the slate word is also italic; the thumbnails are aria-hidden decoration. */
   --color-slate: oklch(55% 0.035 233);
   --color-tan: oklch(77% 0.03 90);
+  /* Warm ochre — the „услуги" (services) bucket marker on the /overruns sector treemap + ranked list.
+     Pairs with --accent (works) and --slate (goods); each bucket also carries a text label + legend,
+     so colour is never the sole differentiator (WCAG 1.4.1). */
+  --color-ochre: oklch(64% 0.12 70);
 
   --font-sans:
     system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
@@ -59,6 +63,7 @@
   --pos: var(--color-pos);
   --slate: var(--color-slate);
   --tan: var(--color-tan);
+  --ochre: var(--color-ochre);
 
   /* Legacy token aliases — keep page-local inline styles working */
   --bg: var(--paper);
@@ -4516,50 +4521,111 @@ tbody td,
   color: var(--accent);
 }
 
-/* KPI band */
-.ov-kpi {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0;
-  margin: var(--s-4) 0;
-  padding: 14px 0;
-  border-top: 1px solid var(--ink);
-  border-bottom: 1px solid var(--rule);
+/* page column: keep the dashboard within the 1200px editorial measure of the design mock */
+.ov-page {
+  max-width: 1200px;
 }
-.ov-kpi-cell {
+
+/* masthead — kicker + title + lede on the left, the three headline KPIs inline on the right (design,
+   same composition as .trend-header). */
+.ov-mast {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 0 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ink);
+}
+.ov-mast-main {
+  min-width: 0;
+}
+.ov-mast-kicker {
+  margin: 0;
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.ov-mast-title {
+  margin: 10px 0 0;
+  font-family: var(--font-serif);
+  font-size: 38px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.02;
+  color: var(--ink);
+}
+.ov-mast-title em {
+  font-style: italic;
+  color: var(--accent);
+}
+.ov-mast-lede {
+  margin: 9px 0 0;
+  max-width: 540px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-mid);
+}
+.ov-mast-kpis {
+  display: flex;
+  flex: none;
+  margin: 0;
+}
+.ov-hk {
   padding: 0 22px;
   border-left: 1px solid var(--rule);
 }
-.ov-kpi-cell:first-child {
-  padding: 0 22px 0 0;
-  border-left: none;
+.ov-hk:last-child {
+  padding-right: 0;
 }
-.ov-kpi-num {
+.ov-hk-v {
   margin: 0;
-  font: 600 24px/1 var(--font-mono);
+  font: 600 25px/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
-.ov-kpi-num.accent {
+.ov-hk-v.accent {
   color: var(--accent);
 }
-.ov-kpi-label {
-  margin-top: 6px;
+.ov-hk-l {
+  margin-top: 5px;
   font: 500 9px/1 var(--font-mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-soft);
 }
+@media (max-width: 760px) {
+  .ov-mast {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .ov-mast-kpis {
+    flex-wrap: wrap;
+  }
+  .ov-hk:first-child {
+    padding-left: 0;
+    border-left: none;
+  }
+}
 
-/* sort bar — segmented toggle (bordered group, filled-active) + legend */
-.ov-sortbar {
+/* sticky filter bar — „ПОДРЕДИ ПО" + segmented toggle (drives ?by=) + before→now legend */
+.ov-filterbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 14px;
+  padding: 10px 14px;
   margin-bottom: var(--s-4);
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
 }
-.ov-sortbar-label {
+.ov-filterbar-label {
   font: 500 9px/1 var(--font-mono);
   letter-spacing: 0.12em;
   color: var(--ink-soft);
@@ -4573,7 +4639,8 @@ tbody td,
 }
 .ov-seg a {
   font: 500 10px/1 var(--font-mono);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   padding: 7px 12px;
   color: var(--ink-mid);
   background: var(--paper);
@@ -4627,18 +4694,49 @@ tbody td,
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-/* Stacked layout: full-width bar leaderboard on top, then the bubble cloud directly under it (both get
-   the full page width — bars no longer side-scroll, the cloud is far more legible), then the inspector. */
-.overruns-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+/* section rhythm: each of the four design sections is a serif heading + mono note, then its panel(s) */
+.ov-section {
+  margin-top: var(--s-6);
 }
-.ov-right {
+.ov-sec-head {
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+.ov-sec-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.ov-sec-title em {
+  font-style: italic;
+  color: var(--accent);
+}
+.ov-sec-note {
+  font: 400 10px/1.3 var(--font-mono);
+  color: var(--ink-soft);
+}
+
+/* two-up figure grid: a wide visual (scatter / treemap) beside a narrower data panel (inspector /
+   ranked list), per the design's minmax(0,1.3fr) minmax(360px,1fr). */
+.ov-figure-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(360px, 1fr);
   gap: 14px;
-  min-height: 0;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .ov-figure-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* leaderboard board */
@@ -4670,12 +4768,12 @@ tbody td,
 }
 .ov-row {
   display: grid;
-  grid-template-columns: 22px 1fr;
-  gap: 11px;
+  grid-template-columns: 32px 1fr;
+  gap: 12px;
   align-items: center;
   width: 100%;
   text-align: left;
-  padding: 8px;
+  padding: 9px 8px;
   border: none;
   border-bottom: 1px solid var(--rule-soft);
   border-left: 2px solid transparent;
@@ -4688,7 +4786,7 @@ tbody td,
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .ov-row-rank {
-  font: 600 15px/1 var(--font-serif);
+  font: 600 22px/1 var(--font-serif);
   color: var(--accent);
   text-align: center;
 }
@@ -4702,7 +4800,7 @@ tbody td,
   gap: 10px;
 }
 .ov-row-subject {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--ink);
 }
@@ -4731,9 +4829,9 @@ tbody td,
   background: repeating-linear-gradient(
     90deg,
     transparent,
-    transparent 48px,
-    var(--rule-soft) 48px,
-    var(--rule-soft) 49px
+    transparent 62px,
+    var(--rule-soft) 62px,
+    var(--rule-soft) 63px
   );
 }
 .ov-bar-fill {
@@ -4971,10 +5069,165 @@ tbody td,
   margin-top: var(--s-3);
 }
 
-@media (max-width: 860px) {
-  .overruns-grid {
-    grid-template-columns: 1fr;
-  }
+/* ── SECTION 3 — sector treemap (area = € risk, colour = growth) + ranked list ── */
+.ov-treemap-panel {
+  padding: 12px;
+  justify-content: center;
+}
+.ov-treemap-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ov-sector-list-panel {
+  padding: 12px 16px 14px;
+}
+/* bucket markers — works→accent, goods→slate, services→ochre, other→ink-soft. Each is paired with a
+   text label / legend so colour is never the sole carrier of the category (WCAG 1.4.1). */
+.ov-bucket-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  font: 400 9.5px/1 var(--font-mono);
+  color: var(--ink-mid);
+}
+.ov-bucket-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ov-sector-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  display: inline-block;
+  flex: none;
+  background: var(--ink-soft);
+}
+.ov-sector-dot.works {
+  background: var(--accent);
+}
+.ov-sector-dot.goods {
+  background: var(--slate);
+}
+.ov-sector-dot.services {
+  background: var(--ochre);
+}
+.ov-sector-dot.other {
+  background: var(--ink-soft);
+}
+.ov-sector-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ov-sector-table thead tr {
+  font: 500 8.5px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.ov-sector-table thead th {
+  padding: 6px 8px 7px;
+  text-align: right;
+  border-bottom: 1px solid var(--ink);
+}
+.ov-sector-table thead th:nth-child(1),
+.ov-sector-table thead th:nth-child(2) {
+  text-align: left;
+}
+.ov-sector-table tbody tr {
+  border-bottom: 1px solid var(--rule-soft);
+}
+.ov-sector-table td {
+  padding: 7px 8px;
+}
+.ov-sector-code {
+  font: 600 11px/1 var(--font-mono);
+  color: var(--ink-mid);
+}
+.ov-sector-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--ink);
+}
+.ov-sector-growth {
+  text-align: right;
+  font: 600 11px/1 var(--font-mono);
+  color: var(--accent);
+}
+.ov-sector-risk {
+  text-align: right;
+  font: 500 11px/1 var(--font-mono);
+  color: var(--ink);
+}
+
+/* ── SECTION 4 — institutions table ── */
+.ov-auth-panel {
+  padding: 12px 16px 14px;
+}
+.ov-auth-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ov-auth-table thead tr {
+  font: 500 8.5px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.ov-auth-table thead th {
+  padding: 6px 8px 7px;
+  text-align: right;
+  border-bottom: 1px solid var(--ink);
+}
+.ov-auth-table thead th.c-rank,
+.ov-auth-table thead th.c-name,
+.ov-auth-table thead th.c-share {
+  text-align: left;
+}
+.ov-auth-table tbody tr {
+  border-bottom: 1px solid var(--rule-soft);
+}
+.ov-auth-table td {
+  padding: 8px;
+  font-size: 11.5px;
+  vertical-align: middle;
+}
+.ov-auth-table td.c-rank {
+  font: 600 12px/1 var(--font-mono);
+  color: var(--ink-soft);
+  width: 28px;
+}
+.ov-auth-table td.c-name {
+  color: var(--ink);
+}
+.ov-auth-table td.c-num {
+  text-align: right;
+  font: 500 11px/1 var(--font-mono);
+  white-space: nowrap;
+}
+.ov-auth-total {
+  color: var(--ink);
+  font-weight: 600 !important;
+}
+.ov-auth-growth {
+  color: var(--accent) !important;
+}
+.ov-auth-table td.c-share {
+  width: 150px;
+}
+.ov-auth-foot {
+  margin: 12px 0 0;
+  text-align: center;
+  font: 400 9.5px/1.4 var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
 }
 /* ===== end overruns-dashboard ===== */
 
