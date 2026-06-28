@@ -19,9 +19,16 @@ const rawRow = (over: Partial<Record<string, unknown>> = {}) => ({
   bidder_id: 'eik:103267194',
   bidder_name: 'ТЕСТ ООД',
   bidder_kind: 'company' as const,
+  bidder_eik: '103267194',
   signing_eur: 1_000_000,
   current_eur: 1_500_000,
   annex_count: 2,
+  cpv_code: '45233110',
+  cpv_description: 'Строеж на магистрали',
+  procedure_type: 'Открита процедура',
+  eu_funded: 1,
+  eu_programme: 'ОПТТИ',
+  signed_at: '2022-03-12',
   ...over,
 });
 
@@ -88,6 +95,46 @@ describe('getTopOverruns', () => {
     expect(r.annexCount).toBe(2);
   });
 
+  it('maps real contract metadata for the inspector „ДЕТАЙЛИ ПО ДОГОВОРА" grid', async () => {
+    const { db } = fakeDb();
+
+    const { rows } = await getTopOverruns(db, { by: 'absolute' });
+    const r = rows[0]!;
+
+    expect(r.cpvCode).toBe('45233110');
+    expect(r.cpvDescription).toBe('Строеж на магистрали');
+    expect(r.sectorLabel).not.toBe('45'); // resolved to the curated CPV-division label
+    expect(r.procedureType).toBe('Открита процедура');
+    expect(r.euFunded).toBe(true);
+    expect(r.euProgramme).toBe('ОПТТИ');
+    expect(r.signedAt).toBe('2022-03-12');
+    expect(r.authorityEik).toBe('000695089');
+    expect(r.bidderEik).toBe('103267194');
+  });
+
+  it('keeps inspector metadata honest when columns are NULL', async () => {
+    const { db } = fakeDb([
+      rawRow({
+        cpv_code: null,
+        cpv_description: null,
+        procedure_type: null,
+        eu_funded: null,
+        eu_programme: null,
+        signed_at: null,
+        bidder_eik: null,
+      }),
+    ]);
+
+    const { rows } = await getTopOverruns(db, { by: 'absolute' });
+    const r = rows[0]!;
+
+    expect(r.cpvCode).toBeNull();
+    expect(r.sectorLabel).toBe('Без код');
+    expect(r.euFunded).toBeNull();
+    expect(r.bidderEik).toBeNull();
+    expect(r.signedAt).toBeNull();
+  });
+
   it('guards against divide-by-zero by skipping rows with non-positive signing', async () => {
     const { db } = fakeDb([
       rawRow({ contract_id: 'c:ok' }),
@@ -149,7 +196,6 @@ function fakeAnalyticsDb(f: AnalyticsFakes = {}): { db: D1Database; sql: string[
     total_overrun_eur: 9_000_000,
     count: 3,
     avg_pct: 0.5,
-    overrun_signing_eur: 18_000_000,
     corpus_signing_eur: 90_000_000,
   };
   const median = f.median ?? { median_pct: 0.42 };
@@ -218,7 +264,6 @@ describe('getOverrunsAnalytics', () => {
         total_overrun_eur: 9_000_000,
         count: 3,
         avg_pct: 0.5,
-        overrun_signing_eur: 18_000_000,
         corpus_signing_eur: 90_000_000,
       },
       median: { median_pct: 0.42 },
@@ -239,7 +284,6 @@ describe('getOverrunsAnalytics', () => {
         total_overrun_eur: 0,
         count: 0,
         avg_pct: 0,
-        overrun_signing_eur: 0,
         corpus_signing_eur: 0,
       },
       median: { median_pct: 0 },
@@ -309,7 +353,6 @@ describe('getOverrunsAnalytics', () => {
         total_overrun_eur: 0,
         count: 0,
         avg_pct: 0,
-        overrun_signing_eur: 0,
         corpus_signing_eur: 0,
       },
       median: { median_pct: 0 },

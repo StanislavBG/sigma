@@ -25,7 +25,7 @@ export function meta({ matches }: Route.MetaArgs) {
     path: '/analytics',
     title: 'Анализи — СИГМА',
     description:
-      'Четири аналитични изгледа към обществените поръчки: потоци, карта, тренд и конкуренция.',
+      'Шест аналитични изгледа към обществените поръчки: раздуване на стойността, потоци, карта, тренд, конкуренция и сравнение — всеки води обратно към конкретните договори.',
   });
 }
 
@@ -68,29 +68,6 @@ export async function loader({ context }: Route.LoaderArgs) {
   };
 }
 
-// Scoped styles for the hero tile — kept here (not in app.css) so a parallel agent's app.css edits
-// don't collide. Uses the shared design tokens; no raw mock hexes.
-const OVERRUNS_HERO_CSS = `
-.overruns-hero{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:0;
-  margin-bottom:var(--s-5);border:1px solid var(--rule);border-top:3px solid var(--accent);
-  border-radius:4px;background:var(--paper-warm);overflow:hidden;color:var(--ink);
-  text-decoration:none;transition:box-shadow .15s ease,border-color .15s ease}
-.overruns-hero:hover{box-shadow:0 2px 14px rgba(40,30,15,.08);border-color:var(--ink-soft)}
-.overruns-hero:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.overruns-hero-main{padding:var(--s-5)}
-.overruns-hero-title{margin:var(--s-2) 0 0;font:600 26px/1.1 var(--font-serif);letter-spacing:-.01em;color:var(--ink)}
-.overruns-hero-title em{font-style:italic;color:var(--accent)}
-.overruns-hero .desc{margin-top:var(--s-2);max-width:46ch;color:var(--ink-mid)}
-.overruns-hero-kpis{display:flex;gap:var(--s-5);margin:var(--s-4) 0 0;padding:var(--s-3) 0 0;border-top:1px solid var(--rule)}
-.overruns-hero-kpis .num{margin:0;font:600 22px/1 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink)}
-.overruns-hero-kpis dt{margin-top:6px;font:500 9px/1 var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft)}
-.overruns-hero .lens-link{margin-top:var(--s-4)}
-.overruns-hero .lens-link span{color:var(--accent);font:500 12px/1 var(--font-mono);letter-spacing:.04em}
-.overruns-hero-aside{padding:var(--s-5);border-left:1px solid var(--rule);background:var(--paper)}
-@media (max-width:760px){.overruns-hero{grid-template-columns:1fr}
-  .overruns-hero-aside{border-left:none;border-top:1px solid var(--rule)}}
-`;
-
 function LensLink({ to, children }: { to: string; children: ReactNode }) {
   return (
     <p className="lens-link">
@@ -121,9 +98,7 @@ function OverrunsHero({
       aria-label={`${overrunsLens.title} — ${overrunsLens.desc}`}
     >
       <div className="overruns-hero-main">
-        <p className="kicker info" style={{ color: 'var(--accent)' }}>
-          Анализ · Акцент
-        </p>
+        <p className="kicker info overruns-hero-kicker">Анализ · Акцент</p>
         <h3 className="overruns-hero-title">
           Раздуване на <em>договорите</em>
         </h3>
@@ -149,9 +124,7 @@ function OverrunsHero({
             {top.map((c) => (
               <li key={c.contractSlug}>
                 <span className="lens-name">{c.subject}</span>
-                <span className="lens-value" style={{ color: 'var(--accent)' }}>
-                  +{money(c.deltaEur)}
-                </span>
+                <span className="lens-value lens-value-accent">+{money(c.deltaEur)}</span>
                 <span className="lens-meta">{signedPct(c.pct)}</span>
               </li>
             ))}
@@ -174,7 +147,7 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
         <PageHeader
           kicker="Анализи"
           title="Анализи"
-          lede="Четири начина да проследиш едни и същи обществени поръчки: като движение на пари, карта, времева линия и сигнал за слаба конкуренция."
+          lede="Шест начина да проследиш едни и същи обществени поръчки: раздуване на стойността след сключване, движение на парите, карта, времева линия, сигнал за слаба конкуренция и сравнение между институции."
         />
 
         <Section
@@ -182,7 +155,6 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
           title="Изгледи"
           hint="Всеки изглед отговаря на различен въпрос, но всички водят обратно към конкретните договори."
         >
-          <style>{OVERRUNS_HERO_CSS}</style>
           <OverrunsHero
             totalOverrunEur={overruns.totalOverrunEur}
             count={overruns.count}
