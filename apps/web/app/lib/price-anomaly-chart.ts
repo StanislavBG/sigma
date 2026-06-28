@@ -21,10 +21,13 @@ export function fmtMult(m: number | null | undefined): string {
   return `×${m >= 20 ? Math.round(m).toString() : (Math.round(m * 10) / 10).toString().replace('.', ',')}`;
 }
 
-// „pN" percentile chip, clamped to p99 so an extreme tail never claims a fabricated p100.
+// The contract's place among its peers, told plainly as the „X% most-expensive" share — e.g. a
+// 99th-percentile value reads „1%" (among the priciest 1%). Clamped so an extreme tail never claims
+// a fabricated p100.
 export function fmtPercentile(p: number | null | undefined): string {
   if (p == null || !Number.isFinite(p)) return '—';
-  return `p${Math.min(99, Math.max(1, Math.round(p)))}`;
+  const pctl = Math.min(99, Math.max(1, Math.round(p)));
+  return `${100 - pctl}%`;
 }
 
 const VBW = 360; // strip viewBox width
