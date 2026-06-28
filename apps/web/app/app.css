@@ -5424,3 +5424,102 @@ tbody td,
   }
 }
 /* ===== end trends chart fullscreen modal ===== */
+
+/* ===== metric-info popover ===== */
+.metric-info {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+.metric-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-left: 5px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-soft);
+  font:
+    600 8px/1 'IBM Plex Mono',
+    var(--font-mono);
+  font-style: italic;
+  cursor: help;
+  flex: none;
+}
+.metric-info-btn:hover,
+.metric-info:focus-within .metric-info-btn {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.metric-info-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.metric-info-pop {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 244px;
+  padding: 12px 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 5px;
+  box-shadow: 0 14px 34px color-mix(in oklch, var(--ink) 38%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease,
+    visibility 0.14s;
+  pointer-events: none;
+}
+.metric-info-pop.is-end {
+  left: auto;
+  right: 0;
+}
+.metric-info:hover .metric-info-pop,
+.metric-info:focus-within .metric-info-pop {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.metric-info-title {
+  font:
+    600 9.5px/1 'IBM Plex Mono',
+    var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--paper) 70%, var(--ink));
+}
+.metric-info-summary {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--paper);
+}
+.metric-info-readout {
+  margin-top: 1px;
+  padding-top: 7px;
+  border-top: 1px solid color-mix(in oklch, var(--paper) 22%, var(--ink));
+  font:
+    500 11px/1.45 'IBM Plex Mono',
+    var(--font-mono);
+  color: #e9a07f;
+}
+@media (max-width: 600px) {
+  .metric-info-pop {
+    width: 200px;
+  }
+}
+/* ===== end metric-info popover ===== */

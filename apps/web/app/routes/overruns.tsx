@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import { Link, useNavigation, useSearchParams } from 'react-router';
-import { count, date, money, moneyBare, signedPct } from '@sigma/shared';
+import { count, date, money, moneyBare, pct, signedPct } from '@sigma/shared';
 import {
   getOverrunAnnexes,
   getOverrunsAnalytics,
@@ -12,6 +12,7 @@ import type { Route } from './+types/overruns';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { DataTable, type Column } from '../components/DataTable';
 import { FullscreenButton, useFullscreen } from '../components/FullscreenButton';
+import { MetricInfo } from '../components/MetricInfo';
 import { Callout, ShareBar } from '../components/ui';
 import { publicCache } from '../lib/cache';
 import { withDbRetry } from '../lib/retry';
@@ -660,17 +661,46 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
           <dl className="ov-mast-kpis" aria-label="Обобщение на раздуването">
             <div className="ov-hk">
               <dd className="ov-hk-v">{money(corpus.totalOverrunEur)}</dd>
-              <dt className="ov-hk-l">ОБЩО РАЗДУВАНЕ</dt>
+              <dt className="ov-hk-l">
+                ОБЩО РАЗДУВАНЕ
+                <MetricInfo
+                  title="Общо раздуване"
+                  summary="Сумата, с която стойността на договорите е нараснала над стойността при сключване — чрез анекси."
+                  readout={
+                    corpus.shareOfSigning > 0
+                      ? `≈ ${pct(corpus.shareOfSigning)} от общо подписаната стойност на корпуса.`
+                      : undefined
+                  }
+                />
+              </dt>
             </div>
             <div className="ov-hk">
               <dd className="ov-hk-v">{count(corpus.count)}</dd>
-              <dt className="ov-hk-l">ДОГОВОРА</dt>
+              <dt className="ov-hk-l">
+                ДОГОВОРА
+                <MetricInfo
+                  title="Договора"
+                  summary="Броят договори с поне един анекс, увеличил потвърдено стойността след сключване (под €1000 подписана стойност се изключват)."
+                />
+              </dt>
             </div>
             <div className="ov-hk">
               <dd className="ov-hk-v accent">
                 {corpus.count ? formatGrowthFactor(corpus.medianPct) : '—'}
               </dd>
-              <dt className="ov-hk-l">МЕДИАНА РАСТЕЖ</dt>
+              <dt className="ov-hk-l">
+                МЕДИАНА РАСТЕЖ
+                <MetricInfo
+                  align="end"
+                  title="Медиана растеж"
+                  summary="Типичното нарастване: половината договори растат повече, половината по-малко — устойчиво на единични екстремни случаи."
+                  readout={
+                    corpus.count
+                      ? `Средното е ${signedPct(corpus.avgPct)} — изкривено нагоре от малкото огромни раздувания.`
+                      : undefined
+                  }
+                />
+              </dt>
             </div>
           </dl>
         </header>

@@ -6,6 +6,7 @@ import { getSpendingTrend, listContracts } from '@sigma/db';
 import type { Route } from './+types/trends';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { TrendComboChart } from '../components/TrendComboChart';
+import { MetricInfo } from '../components/MetricInfo';
 import { Callout } from '../components/ui';
 import { publicCache } from '../lib/cache';
 import { buildForecast, estimateYoyGrowth } from '../lib/trends-forecast';
@@ -172,6 +173,16 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
   const grandTotal = data.years.reduce((a, y) => a + y.valueEur, 0);
   const YOY_BAR_MAX = 2.8; // a +280% YoY fills the bar
 
+  // Analytical readouts for the KPI info popovers (all from the already-loaded figures).
+  const yearCount = data.years.length || 1;
+  const monthCount = data.points.length || 1;
+  const perYearValue = kpis.totalValueEur / yearCount;
+  const perYearContracts = kpis.contracts / yearCount;
+  const peakRatio =
+    kpis.peak && kpis.totalValueEur > 0
+      ? kpis.peak.valueEur / (kpis.totalValueEur / monthCount)
+      : null;
+
   // Step toggle (МЕСЕЧНО/ТРИМЕСЕЧНО/ГОДИШНО) — rendered both in the filter bar and the fullscreen header.
   const stepToggle = (
     <div role="group" aria-label="Стъпка на графиката" className="trend-steps">
@@ -223,15 +234,37 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
           <div className="trend-header-kpis">
             <div className="trend-hk">
               <div className="trend-hk-v">{money(kpis.totalValueEur)}</div>
-              <div className="trend-hk-l">ОБЩО ЗА ПЕРИОДА</div>
+              <div className="trend-hk-l">
+                ОБЩО ЗА ПЕРИОДА
+                <MetricInfo
+                  title="Общо за периода"
+                  summary="Сумарната стойност на всички договори с потвърдена стойност за обхванатия период."
+                  readout={`Средно ≈ ${money(perYearValue)} на година.`}
+                />
+              </div>
             </div>
             <div className="trend-hk">
               <div className="trend-hk-v">{count(kpis.contracts)}</div>
-              <div className="trend-hk-l">ДОГОВОРА</div>
+              <div className="trend-hk-l">
+                ДОГОВОРА
+                <MetricInfo
+                  title="Договора"
+                  summary="Броят договори с потвърдена дата на сключване и стойност (без анулираните и без невалидни дати)."
+                  readout={`≈ ${count(Math.round(perYearContracts))} на година.`}
+                />
+              </div>
             </div>
             <div className="trend-hk">
               <div className="trend-hk-v">{kpis.avgEur > 0 ? money(kpis.avgEur) : '—'}</div>
-              <div className="trend-hk-l">СРЕДЕН ДОГОВОР</div>
+              <div className="trend-hk-l">
+                СРЕДЕН ДОГОВОР
+                <MetricInfo
+                  align="end"
+                  title="Среден договор"
+                  summary="Общата стойност, разделена на броя договори — средна, не медианна."
+                  readout="Малък брой много големи договори изкривяват средното нагоре; типичният договор е доста по-малък."
+                />
+              </div>
             </div>
             <div className="trend-hk">
               <div className="trend-hk-v trend-hk-v--accent">
@@ -239,6 +272,16 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
               </div>
               <div className="trend-hk-l">
                 {kpis.peak ? `ПИК · ${shortMonthLabel(kpis.peak.period)}` : 'ПИК'}
+                <MetricInfo
+                  align="end"
+                  title="Пик"
+                  summary="Месецът с най-висока сумарна стойност на сключени договори в периода."
+                  readout={
+                    peakRatio
+                      ? `${peakRatio.toFixed(1).replace('.', ',')}× над типичния месец — обикновено края на годината.`
+                      : undefined
+                  }
+                />
               </div>
             </div>
           </div>
