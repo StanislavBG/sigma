@@ -5,7 +5,6 @@ import { CPV_SECTORS } from '@sigma/config';
 import { getSpendingTrend, listContracts } from '@sigma/db';
 import type { Route } from './+types/trends';
 import { Breadcrumbs } from '../components/Breadcrumbs';
-import { PageHeader } from '../components/PageHeader';
 import { TrendComboChart } from '../components/TrendComboChart';
 import { Callout } from '../components/ui';
 import { publicCache } from '../lib/cache';
@@ -169,7 +168,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
               borderLeftWidth: i === 0 ? 1 : 0,
               borderRadius:
                 i === 0 ? '3px 0 0 3px' : i === STEP_DEFS.length - 1 ? '0 3px 3px 0' : 0,
-              background: on ? 'var(--ink)' : 'var(--paper)',
+              background: on ? 'var(--ink)' : 'var(--paper-raised)',
               color: on ? 'var(--paper)' : 'var(--ink-mid)',
             }}
           >
@@ -184,27 +183,42 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
     <>
       <Breadcrumbs items={[{ label: 'Начало', to: '/' }, { label: 'Тренд във времето' }]} />
       <main id="main">
-        <PageHeader
-          kicker="Анализ · Тренд във времето"
-          title={
-            <>
+        {/* combined header — title + lede on the left, the four KPIs inline on the right (design) */}
+        <header className="trend-header">
+          <div className="trend-header-main">
+            <p className="trend-header-kicker">Анализ · Тренд във времето</p>
+            <h1 className="trend-header-title">
               Тренд във <em>времето</em>
-            </>
-          }
-          lede="Как се движат разходите за обществени поръчки през годините — месечен обем, брой договори и типичните пикове в края на годината. Договорите без валидна дата на сключване не влизат в графиката."
-        />
-
-        {/* KPI strip */}
-        <div className="trend-kpis">
-          <Kpi value={money(kpis.totalValueEur)} label="ОБЩО ЗА ПЕРИОДА" />
-          <Kpi value={count(kpis.contracts)} label="ДОГОВОРА" />
-          <Kpi value={kpis.avgEur > 0 ? money(kpis.avgEur) : '—'} label="СРЕДЕН ДОГОВОР" />
-          <Kpi
-            value={kpis.peak ? money(kpis.peak.valueEur) : '—'}
-            label={kpis.peak ? `ПИК · ${shortMonthLabel(kpis.peak.period)}` : 'ПИК'}
-            accent
-          />
-        </div>
+            </h1>
+            <p className="trend-header-lede">
+              Как се движат разходите за обществени поръчки през годините — месечен обем, брой
+              договори и типичните пикове в края на годината. Договорите без валидна дата на
+              сключване не влизат в графиката.
+            </p>
+          </div>
+          <div className="trend-header-kpis">
+            <div className="trend-hk">
+              <div className="trend-hk-v">{money(kpis.totalValueEur)}</div>
+              <div className="trend-hk-l">ОБЩО ЗА ПЕРИОДА</div>
+            </div>
+            <div className="trend-hk">
+              <div className="trend-hk-v">{count(kpis.contracts)}</div>
+              <div className="trend-hk-l">ДОГОВОРА</div>
+            </div>
+            <div className="trend-hk">
+              <div className="trend-hk-v">{kpis.avgEur > 0 ? money(kpis.avgEur) : '—'}</div>
+              <div className="trend-hk-l">СРЕДЕН ДОГОВОР</div>
+            </div>
+            <div className="trend-hk">
+              <div className="trend-hk-v trend-hk-v--accent">
+                {kpis.peak ? money(kpis.peak.valueEur) : '—'}
+              </div>
+              <div className="trend-hk-l">
+                {kpis.peak ? `ПИК · ${shortMonthLabel(kpis.peak.period)}` : 'ПИК'}
+              </div>
+            </div>
+          </div>
+        </header>
 
         {/* filter bar: step toggle (client) + sector/funding (server) + active-year chip */}
         <div className="trend-filterbar">
@@ -512,15 +526,6 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
         </Callout>
       </main>
     </>
-  );
-}
-
-function Kpi({ value, label, accent }: { value: string; label: string; accent?: boolean }) {
-  return (
-    <div className="trend-kpi">
-      <div className={`trend-kpi-val${accent ? ' is-accent' : ''}`}>{value}</div>
-      <div className="trend-kpi-label">{label}</div>
-    </div>
   );
 }
 

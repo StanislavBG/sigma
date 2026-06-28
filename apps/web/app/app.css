@@ -39,6 +39,9 @@
   /* Short aliases → @theme tokens, so the ported component CSS keeps using var(--paper) etc. */
   --paper: var(--color-paper);
   --paper-warm: var(--color-paper-warm);
+  /* Pure-white raised surface — form chips/toggles that must read as "above" the warm panels
+     (the design renders the trend filter chips and the step toggle in #fff on the #FBF8F1 bar). */
+  --paper-raised: #ffffff;
   --paper-deep: var(--color-paper-deep);
   --ink: var(--color-ink);
   --ink-mid: var(--color-ink-mid);
@@ -3832,7 +3835,7 @@ tbody td,
    inline. The mono face mirrors the design mock's IBM Plex Mono, falling back to the app token. */
 .trend-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.95fr) minmax(300px, 1fr);
+  grid-template-columns: minmax(0, 1.95fr) minmax(330px, 1fr);
   gap: 14px;
 }
 @media (max-width: 880px) {
@@ -3864,34 +3867,82 @@ tbody td,
 }
 
 /* KPI strip */
-.trend-kpis {
+/* combined header: title + lede on the left, KPIs inline on the right, one bordered row (design) */
+.trend-header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0;
-  margin: 0 0 18px;
-  border-top: 1px solid var(--rule);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 0 14px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--rule);
 }
-.trend-kpi {
-  padding: 12px 22px;
-  border-left: 1px solid var(--rule);
+.trend-header-main {
+  min-width: 0;
 }
-.trend-kpi-val {
-  font:
-    600 25px/1 'IBM Plex Mono',
-    var(--font-mono);
-  color: var(--ink);
-}
-.trend-kpi-val.is-accent {
+.trend-header-kicker {
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
   color: var(--accent);
 }
-.trend-kpi-label {
+.trend-header-title {
+  margin: 8px 0 0;
+  font-family: var(--font-serif);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1;
+  color: var(--ink);
+}
+.trend-header-title em {
+  font-style: italic;
+  color: var(--accent);
+}
+.trend-header-lede {
+  margin: 7px 0 0;
+  max-width: 460px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-mid);
+}
+.trend-header-kpis {
+  display: flex;
+  flex: none;
+}
+.trend-hk {
+  padding: 0 22px;
+  border-left: 1px solid var(--rule);
+}
+.trend-hk:last-child {
+  padding-right: 0;
+}
+.trend-hk-v {
+  font: 600 25px/1 var(--font-mono);
+  color: var(--ink);
+}
+.trend-hk-v--accent {
+  color: var(--accent);
+}
+.trend-hk-l {
   margin-top: 4px;
-  font:
-    500 9px/1 'IBM Plex Mono',
-    var(--font-mono);
+  font: 500 9px/1 var(--font-mono);
   letter-spacing: 0.14em;
   color: var(--ink-soft);
+}
+@media (max-width: 760px) {
+  .trend-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .trend-header-kpis {
+    flex-wrap: wrap;
+  }
+  .trend-hk:first-child {
+    padding-left: 0;
+    border-left: none;
+  }
 }
 
 /* filter bar */
@@ -3930,7 +3981,7 @@ tbody td,
   align-items: center;
   gap: 7px;
   padding: 5px 10px;
-  background: var(--paper);
+  background: var(--paper-raised);
   border: 1px solid var(--rule);
   border-radius: 3px;
 }
@@ -4019,7 +4070,7 @@ tbody td,
 .trend-sw-box {
   width: 9px;
   height: 9px;
-  background: color-mix(in oklch, var(--ink) 40%, transparent);
+  background: rgb(94 124 139 / 0.55); /* slate — matches the count bars */
   display: inline-block;
   border-radius: 1px;
 }
@@ -4239,6 +4290,14 @@ tbody td,
 .trend-chart-wrap {
   position: relative;
   width: 100%;
+  /* the design's chart palette — the count series is slate, the € line is tan, the trend is ink, and
+     the forecast/peak/hover are accent. Kept as scoped custom props so the SVG (whose fill/stroke can't
+     take a class) inherits them. Slate is decorative here: every series is also shape- and legend-coded. */
+  --trend-count: 94 124 139; /* slate (rgb channels) — count bars + band */
+  --trend-count-ink: #5e7c8b; /* darker slate — count axis text + ПРОГНОЗА */
+  --trend-line: #c4b79c; /* tan — actual/forecast € line */
+  --trend-grid: #e7dfcd; /* warm gridlines */
+  --trend-xtick-fc: #9aa7ae; /* forecast x-tick label */
 }
 .trend-svg {
   display: block;
@@ -4291,7 +4350,7 @@ tbody td,
 .trend-tip-sw-box {
   width: 8px;
   height: 8px;
-  background: color-mix(in oklch, var(--paper) 65%, var(--ink));
+  background: rgb(var(--trend-count) / 0.85);
   display: inline-block;
   border-radius: 1px;
 }

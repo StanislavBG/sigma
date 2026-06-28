@@ -10,17 +10,19 @@ import type { DisplayPoint } from '../lib/trends-series';
 // over per-point hit boxes. (The simpler sparkline used by the entity/analytics embeds stays in
 // TrendChart.tsx — this is the full dashboard variant.)
 //
-// SVG presentation colours come from the app's CSS tokens via inline `style` (SVG fill/stroke can't
-// take a CSS class or `var()` through an attribute), keeping the SVG on-palette. The surrounding HTML
-// chrome (wrapper, tooltip, swatches) lives in app.css under the trends-dashboard block. The
-// contract-count measure uses translucent ink rather than a second hue, per the accessibility
-// convention (no blue, don't lean on colour alone — the bars also carry the right-axis legend + the
-// tooltip count).
+// SVG presentation colours come through CSS custom properties (set on .trend-chart-wrap in app.css)
+// so the SVG stays themeable. This matches the design's chart palette exactly: the contract-count
+// measure is slate (--trend-count), the € line is tan (--trend-line), the trend is ink, and the
+// forecast/peak/hover are accent. Colour is never the sole encoder — each series also differs by shape
+// (bars vs solid vs dashed line), is named in the legend, and the figures live in the „По години"
+// table + the hover tooltip.
 
-const BAR_ACTUAL = 'color-mix(in oklch, var(--ink) 30%, transparent)';
-const BAR_FORECAST = 'color-mix(in oklch, var(--ink) 14%, transparent)';
-const BAR_HOVER = 'color-mix(in oklch, var(--ink) 58%, transparent)';
-const BAND_FILL = 'color-mix(in oklch, var(--ink) 5%, transparent)';
+const BAR_ACTUAL = 'rgb(var(--trend-count) / 0.52)';
+const BAR_FORECAST = 'rgb(var(--trend-count) / 0.26)';
+const BAR_HOVER = 'rgb(var(--trend-count) / 0.92)';
+const BAND_FILL = 'rgb(var(--trend-count) / 0.06)';
+const COUNT_INK = 'var(--trend-count-ink)'; // darker slate — count axis + ПРОГНОЗА label
+const EUR_LINE = 'var(--trend-line)'; // tan — actual/forecast € line
 const MONO = "'IBM Plex Mono', ui-monospace, monospace";
 
 export function TrendComboChart({
@@ -98,7 +100,7 @@ export function TrendComboChart({
               fontSize={8.5}
               fontWeight={600}
               letterSpacing="0.14em"
-              style={{ fill: 'var(--ink-mid)', fontFamily: MONO }}
+              style={{ fill: COUNT_INK, fontFamily: MONO }}
             >
               ПРОГНОЗА
             </text>
@@ -113,7 +115,7 @@ export function TrendComboChart({
               y1={g.y}
               x2={width}
               y2={g.y}
-              style={{ stroke: 'var(--rule-soft)' }}
+              style={{ stroke: 'var(--trend-grid)' }}
               strokeWidth={1}
             />
             <text
@@ -147,7 +149,7 @@ export function TrendComboChart({
         <path
           d={model.actualLine}
           fill="none"
-          style={{ stroke: 'var(--ink-soft)' }}
+          style={{ stroke: EUR_LINE }}
           strokeWidth={1.1}
           strokeLinejoin="round"
         />
@@ -155,7 +157,7 @@ export function TrendComboChart({
           <path
             d={model.forecastLine}
             fill="none"
-            style={{ stroke: 'var(--ink-soft)' }}
+            style={{ stroke: EUR_LINE }}
             strokeWidth={1.1}
             strokeDasharray="4 3"
             strokeLinejoin="round"
@@ -193,7 +195,7 @@ export function TrendComboChart({
           y={plotTop}
           textAnchor="end"
           fontSize={8}
-          style={{ fill: 'var(--ink-mid)', fontFamily: MONO }}
+          style={{ fill: COUNT_INK, fontFamily: MONO }}
         >
           договори ▸
         </text>
@@ -204,13 +206,13 @@ export function TrendComboChart({
             y={t.y + 3}
             textAnchor="end"
             fontSize={8.5}
-            style={{ fill: 'var(--ink-mid)', fontFamily: MONO }}
+            style={{ fill: COUNT_INK, fontFamily: MONO }}
           >
             {t.label}
           </text>
         ))}
 
-        {/* x-axis ticks */}
+        {/* x-axis ticks (forecast ticks read in a cooler muted slate) */}
         {model.xTicks.map((t, i) => (
           <text
             key={`xt-${i}`}
@@ -218,7 +220,10 @@ export function TrendComboChart({
             y={height - 5}
             textAnchor="middle"
             fontSize={9}
-            style={{ fill: t.forecast ? 'var(--ink-soft)' : 'var(--ink-mid)', fontFamily: MONO }}
+            style={{
+              fill: t.forecast ? 'var(--trend-xtick-fc)' : 'var(--ink-soft)',
+              fontFamily: MONO,
+            }}
           >
             {t.label}
           </text>
