@@ -46,6 +46,22 @@ describe('estimateYoyGrowth', () => {
     expect(g.value).toBeLessThanOrEqual(2);
     expect(g.value).toBeGreaterThanOrEqual(0.5);
   });
+
+  it('uses the median so an early corpus ramp-up year does not dominate the projection', () => {
+    // 2020 is the artificially-low open-data ramp-up year: a one-off +260% spike, then a steady ~+15%.
+    const points = [
+      ...year(2020, 10, 5),
+      ...year(2021, 36, 18), // +260% — the backfill artifact
+      ...year(2022, 41, 20), // +14%
+      ...year(2023, 47, 23), // +15%
+      ...year(2024, 54, 26), // +15%
+    ];
+    const g = estimateYoyGrowth(points);
+    // Endpoint CAGR / geometric mean would carry the spike forward at ~+52%/yr ((54/10)^(1/4)≈1.52);
+    // the median of the four ratios lands on the genuine sustainable ~+15%.
+    expect(g.value).toBeGreaterThan(1.1);
+    expect(g.value).toBeLessThan(1.25);
+  });
 });
 
 describe('buildForecast', () => {

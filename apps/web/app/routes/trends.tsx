@@ -70,6 +70,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   return { data, unknownSector, latest: latest.items, funding };
 }
 
+// Default chart window: the most recent N years of actuals (plus the forecast tail).
+const CHART_TRAILING_YEARS = 5;
+
 const STEP_DEFS: { key: Step; label: string }[] = [
   { key: 'month', label: 'МЕСЕЧНО' },
   { key: 'quarter', label: 'ТРИМЕСЕЧНО' },
@@ -98,9 +101,22 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
   // and the methodology sentence below are all gated on this so we never describe an absent forecast.
   const hasForecast = useMemo(() => combined.some((p) => p.forecast), [combined]);
 
+  // Default chart view is the last CHART_TRAILING_YEARS of actuals + the forecast tail — the early
+  // ramp-up years (and any stray junk year) are trimmed so the curve reads cleanly. A year drill-down
+  // shows that single year in full.
+  const windowed = useMemo(() => {
+    if (activeYear) return combined;
+    const actualYears = combined
+      .filter((p) => !p.forecast)
+      .map((p) => Number(p.period.slice(0, 4)));
+    if (!actualYears.length) return combined;
+    const minYear = Math.max(...actualYears) - (CHART_TRAILING_YEARS - 1);
+    return combined.filter((p) => p.forecast || Number(p.period.slice(0, 4)) >= minYear);
+  }, [combined, activeYear]);
+
   const display = useMemo(
-    () => aggregate(combined, step, activeYear),
-    [combined, step, activeYear],
+    () => aggregate(windowed, step, activeYear),
+    [windowed, step, activeYear],
   );
 
   const hasChart = display.length >= 2;
@@ -110,8 +126,8 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
     activeYear || step === 'month' ? 'месеци' : step === 'quarter' ? 'тримесечия' : 'години';
 
   const growthTxt = `${growth.value >= 1 ? '+' : ''}${Math.round((growth.value - 1) * 100)}%`;
-  const firstYear = combined.length ? combined[0]!.period.slice(0, 4) : '';
-  const lastYear = combined.length ? combined.at(-1)!.period.slice(0, 4) : '';
+  const firstYear = windowed.length ? windowed[0]!.period.slice(0, 4) : '';
+  const lastYear = windowed.length ? windowed.at(-1)!.period.slice(0, 4) : '';
   const chartMeta = activeYear
     ? String(activeYear)
     : `${firstYear}–${lastYear} · ръст ${growthTxt}/год`;

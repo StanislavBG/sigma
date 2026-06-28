@@ -40,11 +40,27 @@ function monthKey(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
+function median(xs: number[]): number {
+  if (xs.length === 0) return 1;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+}
+
+// The forecast growth rate is estimated from a TRAILING window of the most recent complete years, not
+// the whole history. The early years of this corpus are the open-data feed's ramp-up (2020 → 2021 was
+// +258% as the backfill filled in) — projecting that one-off spike forward gives an absurdly aggressive
+// curve (~+57%/yr). A 3-year trailing window captures the genuine, sustainable recent rate (~+15%/yr in
+// 2023–25) and keeps the projection conservative.
+const FORECAST_TRAILING_YEARS = 3;
+
 /**
  * Estimate the YoY growth multiplier (spend + contract count) from the actual monthly series.
  * Only complete years (12 non-partial months with a positive total) feed the estimate; the partial
- * final year and a partial first year are ignored so a half-year never skews the ratio. The factor
- * is the geometric mean of consecutive complete-year ratios. Fewer than two complete years → flat.
+ * final year and a partial first year are ignored so a half-year never skews the ratio. Of those, only
+ * the last {@link FORECAST_TRAILING_YEARS} are used (the trailing window above). The factor is the
+ * MEDIAN of the consecutive year ratios within that window — robust to a single blip year. Fewer than
+ * two complete years → flat.
  */
 export function estimateYoyGrowth(points: TrendPoint[]): GrowthFactors {
   const byYear = new Map<
@@ -64,26 +80,20 @@ export function estimateYoyGrowth(points: TrendPoint[]): GrowthFactors {
     .filter(([, v]) => v.months === 12 && !v.partial && v.value > 0)
     .sort((a, b) => a[0] - b[0]);
   if (complete.length < 2) return { value: 1, count: 1 };
+  // Only the last N complete years (the trailing window) drive the rate.
+  const recent = complete.slice(-FORECAST_TRAILING_YEARS);
 
-  let valueProduct = 1;
-  let countProduct = 1;
-  let valueN = 0;
-  let countN = 0;
-  for (let i = 1; i < complete.length; i += 1) {
-    const prev = complete[i - 1]![1];
-    const cur = complete[i]![1];
-    if (prev.value > 0) {
-      valueProduct *= cur.value / prev.value;
-      valueN += 1;
-    }
-    if (prev.count > 0) {
-      countProduct *= cur.count / prev.count;
-      countN += 1;
-    }
+  const valueRatios: number[] = [];
+  const countRatios: number[] = [];
+  for (let i = 1; i < recent.length; i += 1) {
+    const prev = recent[i - 1]![1];
+    const cur = recent[i]![1];
+    if (prev.value > 0) valueRatios.push(cur.value / prev.value);
+    if (prev.count > 0) countRatios.push(cur.count / prev.count);
   }
   return {
-    value: clampGrowth(valueN ? valueProduct ** (1 / valueN) : 1),
-    count: clampGrowth(countN ? countProduct ** (1 / countN) : 1),
+    value: clampGrowth(valueRatios.length ? median(valueRatios) : 1),
+    count: clampGrowth(countRatios.length ? median(countRatios) : 1),
   };
 }
 
