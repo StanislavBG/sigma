@@ -5356,6 +5356,7 @@ tbody td,
 }
 .trend-fs-title {
   margin-top: 9px;
+  margin-bottom: 0;
   font-family: var(--font-serif);
   font-size: 30px;
   font-weight: 600;
@@ -5510,7 +5511,7 @@ tbody td,
   font:
     500 11px/1.45 'IBM Plex Mono',
     var(--font-mono);
-  color: #e9a07f;
+  color: color-mix(in oklch, var(--accent) 70%, var(--paper));
 }
 @media (max-width: 600px) {
   .metric-info-pop {

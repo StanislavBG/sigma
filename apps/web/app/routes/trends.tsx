@@ -152,6 +152,9 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
   // cleanup runs on the chartFull→false transition and returns focus regardless of how it closed.)
   useEffect(() => {
     if (!chartFull) return;
+    // Lock the page behind the modal so wheel/touch scrolling moves the dialog, not the document.
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     closeBtnRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -178,6 +181,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevBodyOverflow;
       fsTriggerRef.current?.focus();
     };
   }, [chartFull]);
@@ -398,15 +402,15 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
               className={`trend-panel trend-chart-panel${chartFull ? ' trend-chart-panel--full' : ''}`}
               role={chartFull ? 'dialog' : undefined}
               aria-modal={chartFull || undefined}
-              aria-label={chartFull ? `${chartTitle} — на цял екран` : undefined}
+              aria-labelledby={chartFull ? 'trend-fs-title' : undefined}
             >
               {chartFull && (
                 <div className="trend-fs-head">
                   <div className="trend-fs-head-main">
                     <div className="trend-fs-kicker">— ТРЕНД ВЪВ ВРЕМЕТО · ЦЯЛ ЕКРАН</div>
-                    <div className="trend-fs-title">
+                    <h2 id="trend-fs-title" className="trend-fs-title">
                       Разходи по <em>{axisWord}</em>
-                    </div>
+                    </h2>
                     <div className="trend-fs-meta">{chartMeta}</div>
                   </div>
                   <div className="trend-fs-head-aside">
