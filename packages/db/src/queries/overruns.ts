@@ -190,6 +190,9 @@ const PEG = 1.95583;
 // `amendments` row, so it returns null (the inspector then omits the figure rather than mis-stating it).
 function annexEur(value: number | null, currency: string | null): number | null {
   if (value == null) return null;
+  // A NULL currency is ASSUMED BGN — the source's default for this feed, not a known-BGN flag. A
+  // genuinely-EUR row that omitted its currency would be mis-pegged (÷PEG); acceptable for a
+  // BGN-default feed, documented here so the assumption is explicit rather than silent.
   const c = (currency ?? 'BGN').toUpperCase();
   if (c === 'EUR') return value;
   if (c === 'BGN') return value / PEG;
