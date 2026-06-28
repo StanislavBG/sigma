@@ -20,10 +20,8 @@ import {
   formatGrowthFactor,
   overrunBarGeometry,
   scatterGeometry,
-  warmRamp,
   type ScatterDatum,
 } from '../lib/overruns-chart';
-import { squarify } from '../lib/treemap';
 import {
   contractStatus,
   groupAnnexes,
@@ -515,20 +513,7 @@ const BUCKET_LABEL: Record<OverrunSectorRow['bucket'], string> = {
   other: 'друго',
 };
 
-const TREEMAP_W = 560;
-const TREEMAP_H = 320;
-
 function SectorSection({ rows }: { rows: OverrunSectorRow[] }) {
-  const byCode = new Map(rows.map((s) => [s.code, s]));
-  const cells = squarify(
-    rows.map((s) => ({ key: s.code, weight: s.riskEur })),
-    { x: 0, y: 0, w: TREEMAP_W, h: TREEMAP_H },
-  );
-  const growths = rows.map((s) => s.growth);
-  const gMin = Math.min(...growths);
-  const gMax = Math.max(...growths);
-  const tOf = (g: number) => (gMax > gMin ? (g - gMin) / (gMax - gMin) : 0.5);
-
   return (
     <section className="ov-section" aria-labelledby="ov-sector-h">
       <SectionHead
@@ -538,106 +523,48 @@ function SectorSection({ rows }: { rows: OverrunSectorRow[] }) {
             Раздуване по <em>сектори</em>
           </>
         }
-        note="площ = € под риск · цвят = растеж"
+        note="агрегиран растеж и сума под риск по CPV-раздел"
       />
-      <div className="ov-figure-grid">
-        <div className="ov-panel ov-treemap-panel">
-          <svg
-            viewBox={`0 0 ${TREEMAP_W} ${TREEMAP_H}`}
-            preserveAspectRatio="xMidYMid meet"
-            role="img"
-            aria-label="Карта на раздуването по CPV-сектори: площта на всеки правоъгълник е сумата евро под риск за раздела, а топлината на цвета — агрегираният растеж. Точните стойности са в таблицата вдясно."
-            className="ov-treemap-svg"
-          >
-            {cells.map((c) => {
-              const s = byCode.get(c.key);
-              if (!s) return null;
-              const t = tOf(s.growth);
-              const showText = c.w > 46 && c.h > 26;
-              return (
-                <g key={c.key}>
-                  <rect
-                    x={c.x}
-                    y={c.y}
-                    width={c.w}
-                    height={c.h}
-                    fill={warmRamp(t)}
-                    stroke={PAPER}
-                    strokeWidth={1.5}
+      <div className="ov-panel ov-sector-list-panel">
+        <ul className="ov-bucket-legend" aria-label="Легенда на секторите">
+          {(['works', 'goods', 'services'] as const).map((b) => (
+            <li key={b} className="ov-bucket-legend-item">
+              <span aria-hidden="true" className={`ov-sector-dot ${b}`} />
+              {BUCKET_LABEL[b]}
+            </li>
+          ))}
+        </ul>
+        <table className="ov-sector-table">
+          <caption className="sr-only">
+            Раздуване по CPV-сектори: код, сектор, агрегиран растеж (сума раздуване / сума при
+            сключване) и обща сума под риск.
+          </caption>
+          <thead>
+            <tr>
+              <th>CPV</th>
+              <th>Сектор</th>
+              <th>Растеж</th>
+              <th>€ риск</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s) => (
+              <tr key={s.code}>
+                <td className="ov-sector-code">{s.code || '—'}</td>
+                <td className="ov-sector-name">
+                  <span
+                    aria-hidden="true"
+                    className={`ov-sector-dot ${s.bucket}`}
+                    title={BUCKET_LABEL[s.bucket]}
                   />
-                  <title>
-                    {`${s.code} ${s.label} — ${moneyBare(s.riskEur)} € под риск, растеж ${signedPct(s.growth)}`}
-                  </title>
-                  {showText ? (
-                    <>
-                      <text
-                        x={c.x + 6}
-                        y={c.y + 15}
-                        fontFamily="var(--font-mono)"
-                        fontSize={11}
-                        fontWeight={600}
-                        fill={t > 0.5 ? PAPER : INK}
-                      >
-                        {s.code}
-                      </text>
-                      <text
-                        x={c.x + 6}
-                        y={c.y + 28}
-                        fontFamily="var(--font-mono)"
-                        fontSize={9.5}
-                        fill={t > 0.5 ? PAPER : INK_SOFT}
-                      >
-                        {signedPct(s.growth, 0)}
-                      </text>
-                    </>
-                  ) : null}
-                </g>
-              );
-            })}
-          </svg>
-        </div>
-
-        <div className="ov-panel ov-sector-list-panel">
-          <ul className="ov-bucket-legend" aria-label="Легенда на секторите">
-            {(['works', 'goods', 'services'] as const).map((b) => (
-              <li key={b} className="ov-bucket-legend-item">
-                <span aria-hidden="true" className={`ov-sector-dot ${b}`} />
-                {BUCKET_LABEL[b]}
-              </li>
-            ))}
-          </ul>
-          <table className="ov-sector-table">
-            <caption className="sr-only">
-              Раздуване по CPV-сектори: код, сектор, агрегиран растеж (сума раздуване / сума при
-              сключване) и обща сума под риск.
-            </caption>
-            <thead>
-              <tr>
-                <th>CPV</th>
-                <th>Сектор</th>
-                <th>Растеж</th>
-                <th>€ риск</th>
+                  <span className="clamp1">{s.label}</span>
+                </td>
+                <td className="ov-sector-growth">{signedPct(s.growth)}</td>
+                <td className="ov-sector-risk">{moneyBare(s.riskEur)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {rows.map((s) => (
-                <tr key={s.code}>
-                  <td className="ov-sector-code">{s.code || '—'}</td>
-                  <td className="ov-sector-name">
-                    <span
-                      aria-hidden="true"
-                      className={`ov-sector-dot ${s.bucket}`}
-                      title={BUCKET_LABEL[s.bucket]}
-                    />
-                    <span className="clamp1">{s.label}</span>
-                  </td>
-                  <td className="ov-sector-growth">{signedPct(s.growth)}</td>
-                  <td className="ov-sector-risk">{moneyBare(s.riskEur)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
     </section>
   );
@@ -783,6 +710,42 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
           {navigating ? 'Обновяване на класацията…' : 'Класацията е обновена.'}
         </p>
 
+        {byAuthority.length ? (
+          <AuthoritySection rows={byAuthority} />
+        ) : (
+          <section className="ov-section" aria-labelledby="ov-auth-empty-h">
+            <SectionHead
+              id="ov-auth-empty-h"
+              title={
+                <>
+                  Кои <em>институции</em> раздуват най-много
+                </>
+              }
+            />
+            <Callout title="Няма данни по институции">
+              <p className="m-0">Все още няма институции с раздути договори в обхванатите данни.</p>
+            </Callout>
+          </section>
+        )}
+
+        {bySector.length ? (
+          <SectorSection rows={bySector} />
+        ) : (
+          <section className="ov-section" aria-labelledby="ov-sector-empty-h">
+            <SectionHead
+              id="ov-sector-empty-h"
+              title={
+                <>
+                  Раздуване по <em>сектори</em>
+                </>
+              }
+            />
+            <Callout title="Няма данни по сектори">
+              <p className="m-0">Все още няма сектори с раздути договори в обхванатите данни.</p>
+            </Callout>
+          </section>
+        )}
+
         {rows.length ? (
           <>
             <OverrunsDashboard key={by} rows={rows} annexesByContract={annexesByContract} />
@@ -807,42 +770,6 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
               подписване. Щом анекс увеличи стойност, договорът ще се появи тук.
             </p>
           </Callout>
-        )}
-
-        {bySector.length ? (
-          <SectorSection rows={bySector} />
-        ) : (
-          <section className="ov-section" aria-labelledby="ov-sector-empty-h">
-            <SectionHead
-              id="ov-sector-empty-h"
-              title={
-                <>
-                  Раздуване по <em>сектори</em>
-                </>
-              }
-            />
-            <Callout title="Няма данни по сектори">
-              <p className="m-0">Все още няма сектори с раздути договори в обхванатите данни.</p>
-            </Callout>
-          </section>
-        )}
-
-        {byAuthority.length ? (
-          <AuthoritySection rows={byAuthority} />
-        ) : (
-          <section className="ov-section" aria-labelledby="ov-auth-empty-h">
-            <SectionHead
-              id="ov-auth-empty-h"
-              title={
-                <>
-                  Кои <em>институции</em> раздуват най-много
-                </>
-              }
-            />
-            <Callout title="Няма данни по институции">
-              <p className="m-0">Все още няма институции с раздути договори в обхванатите данни.</p>
-            </Callout>
-          </section>
         )}
 
         <p className="small muted ov-methodology">
