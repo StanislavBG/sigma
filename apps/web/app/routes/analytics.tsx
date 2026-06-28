@@ -361,7 +361,7 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
                 },
                 {
                   value: growthMultiple(overruns.medianPct),
-                  label: 'МЕДИАНА РАСТЕЖ',
+                  label: 'ТИПИЧЕН РАСТЕЖ',
                   summary:
                     'Типичното нарастване — половината договори растат повече, половината по-малко.',
                   hint: '„×" = колко пъти спрямо стойността при сключване.',
@@ -432,7 +432,7 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
                   label: 'СРЕДЕН РЪСТ',
                   accent: true,
                   summary:
-                    'Типичният годишен ръст на разходите — медиана за последните 3 пълни години.',
+                    'Типичният годишен ръст на разходите за последните 3 пълни години.',
                   hint: 'Същата стойност като на страницата „Тренд".',
                 },
                 {
@@ -473,7 +473,7 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
 
             <AnalyzeCard
               index="06"
-              category="ОТКЛОНЕНИЕ СПРЯМО CPV КОХОРТА"
+              category="СКЪПИ СПРЯМО СХОДНИ ПОРЪЧКИ"
               to="/price-anomaly"
               titlePre="Раздути спрямо "
               titleEm="сходни"
@@ -484,14 +484,14 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
                   value: count(anomaly.cohortCount),
                   label: 'CPV ГРУПИ',
                   summary:
-                    'Брой CPV кохорти с достатъчно сходни поръчки (n≥30), за да се прецени дали договор е необичайно скъп.',
+                    'Брой категории (CPV) с достатъчно сходни поръчки (поне 30), за да се прецени дали договор е необичайно скъп.',
                 },
                 {
                   value: anomaly.topMult != null ? fmtMult(anomaly.topMult) : '—',
                   label: 'МАКС. ОТКЛОНЕНИЕ',
                   accent: true,
                   summary:
-                    'Най-голямото отклонение на маркиран договор спрямо медианата на неговата CPV кохорта.',
+                    'Колко пъти над типичната стойност за сходните поръчки от същата категория е най-силно изпъкващият маркиран договор.',
                   hint: 'Голяма стойност ≠ надплащане — маркира за проверка, не доказва злоупотреба.',
                 },
               ]}
