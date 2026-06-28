@@ -5,7 +5,7 @@
 // current_value_eur and so are excluded honestly here). Read-only, edge-cached at the route; mirrors
 // the live-aggregation style of flows.ts / competition.ts — no new rollup table.
 //
-// delta = current − signing; pct = delta / signing. signing_value_eur is required to be > 0 in the
+// delta = current − signing; pct = delta / signing. signing_value_eur is required to be >= €1 000 in the
 // WHERE (data-quality guard + makes the pct division safe); the JS mapping double-guards so a stray
 // non-positive signing can never produce an Infinity/NaN pct.
 //
@@ -143,11 +143,16 @@ const YEAR_UNKNOWN = 'Неизвестна';
 // The overrun predicate, shared by every query so they never disagree on what counts as a ballooned
 // contract. Uses only `contracts` columns (aliased `c`) so it works both as a WHERE and as a CASE
 // condition in the single-pass corpus aggregate.
+// Data-quality floor: the signing value must be at least €1 000. Many source rows carry a 0 or
+// near-zero signing amount (placeholder / not-yet-filled), which makes pct = delta/signing explode to
+// thousands of percent ("+4818%", "от 0 €") and dominate the charts with artefacts rather than real
+// overruns. Requiring ≥ €1 000 keeps the ratio meaningful.
+const OVERRUN_MIN_SIGNING_EUR = 1000;
 const OVERRUN_WHERE = `c.signing_value_eur IS NOT NULL
        AND c.current_value_eur IS NOT NULL
        AND c.annex_count > 0
        AND c.current_value_eur > c.signing_value_eur
-       AND c.signing_value_eur > 0`;
+       AND c.signing_value_eur >= ${OVERRUN_MIN_SIGNING_EUR}`;
 
 // delta / pct expressions, reused across aggregates so the maths is defined once.
 const DELTA = '(c.current_value_eur - c.signing_value_eur)';
@@ -222,11 +227,11 @@ function leaderboardSql(by: 'absolute' | 'percent'): string {
          LIMIT ?`;
 }
 
-// Map raw leaderboard rows to the API shape. Divide-by-zero guard: never trust the WHERE alone — drop
-// any row whose signing is non-positive so deltaEur/signing can't yield Infinity/NaN.
+// Map raw leaderboard rows to the API shape. Belt-and-suspenders: re-apply the €1 000 signing floor
+// (never trust the WHERE alone) so a near-zero signing can't yield an Infinity/NaN or runaway pct.
 function mapOverrunRows(raw: RawRow[]): OverrunRow[] {
   return raw
-    .filter((r) => r.signing_eur > 0 && r.current_eur > r.signing_eur)
+    .filter((r) => r.signing_eur >= OVERRUN_MIN_SIGNING_EUR && r.current_eur > r.signing_eur)
     .map((r) => {
       const deltaEur = r.current_eur - r.signing_eur;
       const bidderName = cleanName(r.bidder_name);

@@ -144,11 +144,12 @@ describe('getTopOverruns', () => {
     expect(r.durationDays).toBeNull();
   });
 
-  it('guards against divide-by-zero by skipping rows with non-positive signing', async () => {
+  it('applies the €1 000 signing floor — skips zero/negative/tiny signing (runaway-pct guard)', async () => {
     const { db } = fakeDb([
       rawRow({ contract_id: 'c:ok' }),
       rawRow({ contract_id: 'c:zero', signing_eur: 0, current_eur: 10_000 }),
       rawRow({ contract_id: 'c:neg', signing_eur: -5, current_eur: 10_000 }),
+      rawRow({ contract_id: 'c:tiny', signing_eur: 500, current_eur: 10_000 }),
     ]);
 
     const { rows } = await getTopOverruns(db, { by: 'percent' });
