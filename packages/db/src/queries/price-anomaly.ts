@@ -90,6 +90,10 @@ export interface PriceAnomalyKpis {
 export interface CohortStatsParams {
   sort?: CohortSort;
   limit?: number;
+  /** Row offset (0-based). Takes precedence over `page` when both are given. */
+  offset?: number;
+  /** 1-based page index — converted to an offset of (page − 1) × limit. */
+  page?: number;
 }
 
 export interface CohortOutliersParams {
@@ -101,6 +105,14 @@ export interface CohortOutliersParams {
 function clampLimit(limit: number | undefined, fallback: number, max: number): number {
   const requested = Number.isInteger(limit) ? limit! : fallback;
   return requested >= 1 && requested <= max ? requested : fallback;
+}
+
+// Resolve the page's row offset: an explicit `offset` wins, else derive it from a 1-based `page`.
+// Clamped to ≥ 0 so a stray negative/non-integer can't produce a malformed OFFSET.
+function clampOffset(offset: number | undefined, page: number | undefined, limit: number): number {
+  if (Number.isInteger(offset) && offset! >= 0) return offset!;
+  if (Number.isInteger(page) && page! >= 1) return (page! - 1) * limit;
+  return 0;
 }
 
 // ORDER BY column for the cohort browse. Whitelisted (never interpolate caller text) so the sort toggle
@@ -134,23 +146,25 @@ interface SampleRaw {
 
 /**
  * The cohort-browse rows + the per-cohort distribution sample for the strips. TWO bounded queries:
- *   1) the cohort rows — read straight from cpv_cohort_stats, ORDER BY the (whitelisted) sort, LIMIT-ed.
+ *   1) the cohort rows — read straight from cpv_cohort_stats, ORDER BY the (whitelisted) sort, with a
+ *      LIMIT + OFFSET for the requested page (total page count comes from getPriceAnomalyKpis.cohortCount).
  *   2) the samples for ONLY the returned codes — one IN-list query (bounded by the page LIMIT), riding
  *      idx_cpv_cohort_sample_code. No median is recomputed; no duplicate COUNT.
  */
 export async function getCohortStats(
   db: D1Database,
-  { sort, limit }: CohortStatsParams = {},
+  { sort, limit, offset, page }: CohortStatsParams = {},
 ): Promise<CohortStatRow[]> {
   const capped = clampLimit(limit, DEFAULT_COHORT_LIMIT, MAX_COHORT_LIMIT);
+  const off = clampOffset(offset, page, capped);
   const statsRes = await db
     .prepare(
       `SELECT code, label, n, median_eur, log_mad, outlier_count, inflated_share
        FROM cpv_cohort_stats
        ORDER BY ${cohortOrderBy(sort)}
-       LIMIT ?`,
+       LIMIT ? OFFSET ?`,
     )
-    .bind(capped)
+    .bind(capped, off)
     .all<StatRaw>();
 
   const codes = statsRes.results.map((r) => r.code);

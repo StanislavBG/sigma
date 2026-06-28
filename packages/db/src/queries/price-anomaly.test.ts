@@ -118,10 +118,27 @@ describe('getCohortStats', () => {
     }
   });
 
-  it('caps the limit and binds it', async () => {
+  it('caps the limit and binds it (page 1 ⇒ offset 0)', async () => {
     const { db, bound } = fakeDb({ stats: [statRaw()], samples: [] });
     await getCohortStats(db, { limit: 99999 }); // over MAX → falls back to the default
-    expect(bound[0]![0]).toBe(50);
+    expect(bound[0]).toEqual([50, 0]); // capped LIMIT, then OFFSET 0
+  });
+
+  it('derives the OFFSET from page × limit and binds LIMIT then OFFSET', async () => {
+    const { db, sql, bound } = fakeDb({ stats: [statRaw()], samples: [] });
+    await getCohortStats(db, { page: 3, limit: 10 });
+    expect(sql.find(isStats)!).toContain('LIMIT ? OFFSET ?');
+    expect(bound[0]).toEqual([10, 20]); // page 3 of 10 ⇒ offset 20
+  });
+
+  it('accepts an explicit offset and clamps a stray negative to 0', async () => {
+    const a = fakeDb({ stats: [statRaw()], samples: [] });
+    await getCohortStats(a.db, { offset: 30, limit: 10 });
+    expect(a.bound[0]).toEqual([10, 30]);
+
+    const b = fakeDb({ stats: [statRaw()], samples: [] });
+    await getCohortStats(b.db, { offset: -5, page: -2, limit: 10 });
+    expect(b.bound[0]).toEqual([10, 0]);
   });
 });
 
