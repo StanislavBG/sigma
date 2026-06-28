@@ -2287,6 +2287,54 @@ details.row .body .signal .why {
   background: var(--ink);
   color: var(--paper);
 }
+/* ── selected-CPV summary header (top of the scorecards, one block per selected cohort) ── */
+.pa-cohort-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 16px 20px 4px;
+}
+.pa-sumcard {
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--accent-bg);
+  padding: 13px 16px;
+}
+.pa-sumcard-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pa-sumcard-head .pa-card-cpv {
+  background: var(--paper);
+}
+.pa-sumcard-name {
+  font: 600 13px/1.3 var(--font-sans);
+  color: var(--ink);
+}
+.pa-sumcard-stats {
+  margin: 9px 0 0;
+  font: 400 12px/1.5 var(--font-sans);
+  color: var(--ink-mid);
+}
+.pa-sumcard-stats strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.pa-sumcard-link {
+  display: inline-block;
+  margin-top: 9px;
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  text-decoration: none;
+}
+.pa-sumcard-link:hover,
+.pa-sumcard-link:focus-visible {
+  text-decoration: underline;
+}
 .pa-cards-grid {
   list-style: none;
   margin: 0;
@@ -2323,6 +2371,20 @@ details.row .body .signal .why {
   border: 1px solid var(--rule);
   border-radius: 2px;
   padding: 3px 5px;
+}
+/* The card's CPV chip is a real link that toggles the ?cohort= facet (sibling of the title link). */
+a.pa-card-cpv {
+  text-decoration: none;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+a.pa-card-cpv:hover,
+a.pa-card-cpv:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-bg);
 }
 .pa-card-mult {
   margin-left: auto;

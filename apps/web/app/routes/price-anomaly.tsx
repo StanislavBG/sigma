@@ -62,11 +62,15 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     //   1) getCohortStats — the page's 10 cohort-browse rows (ORDER BY whitelisted sort, LIMIT/OFFSET) +
     //      ONE IN-list sample query for only those page codes.  (= 2 statements)
     //   2) getCohortOutliers — the flagged contracts, optionally faceted to `selected`, mult DESC, LIMIT.
-    const [cohorts, outliers] = await Promise.all([
+    //   3) getCohortStats({ codes }) — full stats for ONLY the selected cohorts (IN-list, no pager), so
+    //      the scorecards summary header can show each selected CPV's real total-contracts/median even
+    //      when that cohort isn't on the current browse page. Skipped entirely when nothing is selected.
+    const [cohorts, outliers, summaryCohorts] = await Promise.all([
       getCohortStats(db, { sort, page, limit: PAGE_SIZE }),
       getCohortOutliers(db, { codes: selected.length ? selected : undefined }),
+      selected.length ? getCohortStats(db, { codes: selected }) : Promise.resolve([]),
     ]);
-    return { kpis, cohorts, outliers, sort, selected, page, pageCount };
+    return { kpis, cohorts, outliers, summaryCohorts, sort, selected, page, pageCount };
   });
 }
 
@@ -231,10 +235,12 @@ function Scorecard({
   outlier,
   rank,
   cohort,
+  cohortHref,
 }: {
   outlier: CohortOutlierRow;
   rank: number;
   cohort?: CohortStatRow;
+  cohortHref: (code: string) => string;
 }) {
   // The flagged contract was judged against its ±1-year window, so the card's median + multiple are the
   // WINDOW median (honest: mult = value / windowMedian). Fall back to deriving it from value/mult only if
@@ -254,7 +260,15 @@ function Scorecard({
       <div className="pa-card-top">
         <div className="pa-card-id">
           <span className="pa-card-rank">{rank}</span>
-          <span className="pa-card-cpv">CPV {outlier.code}</span>
+          <Link
+            to={cohortHref(outlier.code)}
+            rel="nofollow"
+            className="pa-card-cpv"
+            title={`CPV ${outlier.code} — ${cohortName}. CPV е единната европейска класификация на обществените поръчки (групира ги по вид). Натисни, за да филтрираш картончетата само по тази категория.`}
+            aria-label={`Филтрирай само категория CPV ${outlier.code} — ${cohortName}`}
+          >
+            CPV {outlier.code}
+          </Link>
         </div>
         <div className="pa-card-mult">
           <div className="pa-card-mult-v">{fmtMult(outlier.mult)}</div>
@@ -280,13 +294,7 @@ function Scorecard({
         {strip.dots.map((d, i) => (
           <circle key={i} cx={d.x} cy={d.y} r={d.r} className="pa-dot" />
         ))}
-        <line
-          x1={strip.medX}
-          y1="5"
-          x2={strip.medX}
-          y2="31"
-          className="pa-strip-med is-dashed"
-        />
+        <line x1={strip.medX} y1="5" x2={strip.medX} y2="31" className="pa-strip-med is-dashed" />
         <text x={strip.medX} y="34" textAnchor="middle" className="pa-strip-ticktext">
           типична
         </text>
@@ -324,24 +332,24 @@ function Methodology() {
         <div className="pa-method-block">
           <h3>1 · С какво сравняваме всеки договор</h3>
           <p>
-            Всеки договор го сравняваме само със <strong>сходни поръчки от същата категория и
-            горе-долу същото време</strong>: поръчки от същата категория на поръчката (CPV —
-            петцифрен код, напр. 45233 — пътно строителство), подписани в рамките на{' '}
-            <strong>±1 година</strong> от него. Всеки договор си има собствена група от такива
-            съвременници.
+            Всеки договор го сравняваме само със{' '}
+            <strong>сходни поръчки от същата категория и горе-долу същото време</strong>: поръчки от
+            същата категория на поръчката (CPV — петцифрен код, напр. 45233 — пътно строителство),
+            подписани в рамките на <strong>±1 година</strong> от него. Всеки договор си има
+            собствена група от такива съвременници.
           </p>
           <p>
             <strong>Защо ±1 година:</strong> цените растат през годините. Ако сравним договор от
-            2018 г. със сходни от 2024 г., бъркаме инфлацията с аномалия — един просто по-нов договор
-            би изглеждал „скъп". Като държим времето приблизително постоянно, сигналът е „скъп спрямо
-            сходни по време", а не „скъп спрямо цялата история".
+            2018 г. със сходни от 2024 г., бъркаме инфлацията с аномалия — един просто по-нов
+            договор би изглеждал „скъп". Като държим времето приблизително постоянно, сигналът е
+            „скъп спрямо сходни по време", а не „скъп спрямо цялата история".
           </p>
           <p>
-            <strong>Разгледана алтернатива:</strong> вместо този плъзгащ се прозорец можехме да делим
-            всяка цена на типичната за нейната категория и година и да подреждаме така изгладените
-            стойности за целия период. Това би запазило повече договори, но въвежда скокове на
-            границите на годините и нестабилни ориентири за редки категории в дадена година. Избрахме
-            ±1-годишния прозорец — по-плавен и по-лесен за обяснение.
+            <strong>Разгледана алтернатива:</strong> вместо този плъзгащ се прозорец можехме да
+            делим всяка цена на типичната за нейната категория и година и да подреждаме така
+            изгладените стойности за целия период. Това би запазило повече договори, но въвежда
+            скокове на границите на годините и нестабилни ориентири за редки категории в дадена
+            година. Избрахме ±1-годишния прозорец — по-плавен и по-лесен за обяснение.
           </p>
         </div>
 
@@ -358,11 +366,11 @@ function Methodology() {
         <div className="pa-method-block">
           <h3>3 · Кога маркираме договор</h3>
           <p>
-            Маркираме договор, когато стойността му е <strong>силно над типичната за групата</strong>{' '}
-            — толкова над нея, че да изпъква дори след като отчетем колко цените в категорията
-            обикновено се разминават. Сравняваме пропорционално (колко пъти, не с колко лева), защото
-            цените се различават с порядъци. Гледаме само <strong>нагоре</strong> — скъпите договори,
-            никога евтините.
+            Маркираме договор, когато стойността му е{' '}
+            <strong>силно над типичната за групата</strong> — толкова над нея, че да изпъква дори
+            след като отчетем колко цените в категорията обикновено се разминават. Сравняваме
+            пропорционално (колко пъти, не с колко лева), защото цените се различават с порядъци.
+            Гледаме само <strong>нагоре</strong> — скъпите договори, никога евтините.
           </p>
           <p>
             <strong>Метод, който един-единствен гигантски договор не може да изкриви:</strong> мерим
@@ -377,9 +385,10 @@ function Methodology() {
           <p>
             Договор се оценява само ако в неговия прозорец има{' '}
             <strong>поне 30 сходни поръчки</strong>. Под този праг съвременните съседи са твърде
-            малко, за да е надеждна оценката. Изключват се честно: <strong>редки категории в дадена
-            година</strong> (твърде малко поръчки) и <strong>договори без дата на подписване</strong>{' '}
-            (не могат да се поставят във времето). Те не се маркират — просто не се оценяват.
+            малко, за да е надеждна оценката. Изключват се честно:{' '}
+            <strong>редки категории в дадена година</strong> (твърде малко поръчки) и{' '}
+            <strong>договори без дата на подписване</strong> (не могат да се поставят във времето).
+            Те не се маркират — просто не се оценяват.
           </p>
         </div>
 
@@ -438,11 +447,14 @@ function Methodology() {
 }
 
 export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
-  const { kpis, cohorts, outliers, sort, selected, page, pageCount } = loaderData;
+  const { kpis, cohorts, outliers, summaryCohorts, sort, selected, page, pageCount } = loaderData;
   const [sp] = useSearchParams();
   const navigating = useNavigation().state !== 'idle';
 
+  // The browse page's cohorts, overlaid with the selected cohorts' full stats (which may NOT be on the
+  // current page) — so a scorecard's strip/label and the summary header read real data either way.
   const byCode = new Map(cohorts.map((c) => [c.code, c]));
+  for (const c of summaryCohorts) byCode.set(c.code, c);
 
   // URL builders — pure, so the toggles are real <Link>s (SSR + no-JS + shareable).
   const cohortHref = (code: string) => {
@@ -495,9 +507,9 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
               Раздути спрямо <em>сходни поръчки</em>
             </h1>
             <p className="pa-mast-lede">
-              Изберѝ категории от таблицата горе — всеки ред показва типичната цена и разпределението на
-              стойностите. Картончетата долу показват всеки маркиран договор спрямо сходните му поръчки
-              от същата категория (CPV).
+              Изберѝ категории от таблицата горе — всеки ред показва типичната цена и
+              разпределението на стойностите. Картончетата долу показват всеки маркиран договор
+              спрямо сходните му поръчки от същата категория (CPV).
             </p>
           </div>
           <dl className="pa-mast-kpis" aria-label="Метод на анализа">
@@ -589,7 +601,9 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
         <section className="pa-panel pa-scorecards" aria-labelledby="pa-cards-h">
           <div className="pa-panel-head pa-panel-head--wrap">
             <div>
-              <div className="pa-kicker">— Маркирани договори · подредени по пъти над типичната</div>
+              <div className="pa-kicker">
+                — Маркирани договори · подредени по пъти над типичната
+              </div>
               <h2 id="pa-cards-h" className="pa-panel-title">
                 Картончета на <em>аномалните</em> договори
               </h2>
@@ -622,12 +636,51 @@ export default function PriceAnomaly({ loaderData }: Route.ComponentProps) {
             </div>
           </div>
 
+          {selected.length > 0 && (
+            <div className="pa-cohort-summary">
+              {selected.map((code) => {
+                const c = byCode.get(code);
+                const label = c?.label ?? code;
+                return (
+                  <div key={code} className="pa-sumcard">
+                    <div className="pa-sumcard-head">
+                      <span className="pa-card-cpv">CPV {code}</span>
+                      <MetricInfo
+                        title="CPV — код на категорията"
+                        summary={`CPV е единната европейска класификация на обществените поръчки — групира поръчките по вид (строителство, лекарства, услуги…). Код ${code} е „${label}".`}
+                      />
+                      <span className="clamp1 pa-sumcard-name">{label}</span>
+                    </div>
+                    {c ? (
+                      <p className="pa-sumcard-stats">
+                        <strong>{count(c.n)} договора</strong> в категорията ·{' '}
+                        <strong>{count(c.outlierCount)}</strong> маркирани като необичайно скъпи ·
+                        типична цена <strong>{money(c.medianEur)}</strong>
+                      </p>
+                    ) : (
+                      <p className="pa-sumcard-stats">Няма данни за тази категория.</p>
+                    )}
+                    <Link to={`/contracts?cpv=${code}`} className="pa-sumcard-link">
+                      Виж всички договори в тази категория →
+                    </Link>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {outliers.length === 0 ? (
             <p className="pa-cards-empty">Няма маркирани договори в избраните категории.</p>
           ) : (
             <ul className="pa-cards-grid">
               {outliers.map((o, i) => (
-                <Scorecard key={o.contractId} outlier={o} rank={i + 1} cohort={byCode.get(o.code)} />
+                <Scorecard
+                  key={o.contractId}
+                  outlier={o}
+                  rank={i + 1}
+                  cohort={byCode.get(o.code)}
+                  cohortHref={cohortHref}
+                />
               ))}
             </ul>
           )}
