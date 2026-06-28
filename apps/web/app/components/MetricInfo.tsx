@@ -1,5 +1,3 @@
-import type { ReactNode } from 'react';
-
 // A small ⓘ affordance next to a metric label. On hover or keyboard focus it reveals an elegant
 // popover with a plain-language summary of the metric and an „analytical readout" — a short, often
 // data-driven, interpretation. Pure CSS show/hide (`:hover` / `:focus-within`), so it is SSR-safe and
@@ -13,13 +11,13 @@ export function MetricInfo({
 }: {
   title: string;
   summary: string;
-  readout?: ReactNode;
+  // Plain string so the readout is always reflected verbatim into the aria-label (all callers pass a
+  // string — the screen-reader text must never silently drop a non-string interpretation).
+  readout?: string;
   // Which edge the popover anchors to — use 'end' for right-most metrics so it doesn't clip.
   align?: 'start' | 'end';
 }) {
-  const aria = readout
-    ? `${title}. ${summary} ${typeof readout === 'string' ? readout : ''}`.trim()
-    : `${title}. ${summary}`;
+  const aria = readout ? `${title}. ${summary} ${readout}`.trim() : `${title}. ${summary}`;
   return (
     <span className="metric-info">
       <button type="button" className="metric-info-btn" aria-label={aria}>

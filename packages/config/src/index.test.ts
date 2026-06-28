@@ -40,9 +40,9 @@ describe('CPV_CATEGORIES', () => {
 });
 
 describe('cpvBucket', () => {
-  it('classifies the construction divisions as works', () => {
+  it('classifies the construction-works division as works', () => {
     expect(cpvBucket('45')).toBe('works');
-    expect(cpvBucket('44210000')).toBe('works'); // full code → division 44
+    expect(cpvBucket('45233120-6')).toBe('works'); // full code → division 45
   });
 
   it('classifies the service divisions as services', () => {
@@ -52,9 +52,10 @@ describe('cpvBucket', () => {
   });
 
   it('classifies the remaining catalogued divisions as goods', () => {
-    for (const code of ['15', '30', '33', '34', '43', '48']) {
-      expect(cpvBucket(code)).toBe('goods');
+    for (const code of ['15', '30', '33', '34', '43', '44', '48']) {
+      expect(cpvBucket(code)).toBe('goods'); // 44 (building materials) is a supply, not works
     }
+    expect(cpvBucket('44210000')).toBe('goods'); // full code → division 44
   });
 
   it('falls back to other for missing or out-of-taxonomy codes', () => {

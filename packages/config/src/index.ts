@@ -220,18 +220,19 @@ export function categoryForDivision(division: string | null | undefined): CpvCat
 // строителство (works), доставки (goods) and услуги (services), plus an `other` fallback for codes
 // outside the catalogue. This mirrors the EU procurement-law tripartition (Directive 2014/24/EU
 // Art. 2(1)(6–9): public works / supply / service contracts), which CPV divisions map onto cleanly:
-//   • works    — the construction divisions: 45 (Строителни и монтажни работи) and
-//                44 (Строителни конструкции и материали).
+//   • works    — the construction WORKS division only: 45 (Строителни и монтажни работи). Per the
+//                Directive's tripartition, works are construction/engineering activities, so 44
+//                (Строителни конструкции и материали) is a SUPPLY of materials and belongs in goods.
 //   • services — the 50-series-and-up service divisions, per the CPV catalogue's own grouping:
 //                50 51 55 60 63 64 65 66 70 71 72 73 75 76 77 79 80 85 90 92 98.
-//   • goods    — every other catalogued division (supplies of products/equipment).
+//   • goods    — every other catalogued division (supplies of products/equipment), including 44.
 // It is a deterministic PARTITION (every division assigned to exactly one bucket), not a keyword
 // heuristic — the same discipline as CPV_CATEGORIES above. Source: Reg. (EC) 213/2008 (CPV) +
 // Directive 2014/24/EU contract-type definitions.
 
 export type CpvBucket = 'works' | 'goods' | 'services' | 'other';
 
-const CPV_BUCKET_WORKS: ReadonlySet<string> = new Set(['45', '44']);
+const CPV_BUCKET_WORKS: ReadonlySet<string> = new Set(['45']);
 const CPV_BUCKET_SERVICES: ReadonlySet<string> = new Set([
   '50',
   '51',

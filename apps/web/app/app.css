@@ -4888,6 +4888,10 @@ tbody td,
 .ov-panel-note {
   font: 400 9.5px/1 var(--font-mono);
   color: var(--ink-soft);
+  /* the note caption holds a label + the fullscreen button, laid out inline */
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 .ov-scatter-body {
   flex: 1;
@@ -5087,16 +5091,7 @@ tbody td,
   margin-top: var(--s-3);
 }
 
-/* ── SECTION 3 — sector treemap (area = € risk, colour = growth) + ranked list ── */
-.ov-treemap-panel {
-  padding: 12px;
-  justify-content: center;
-}
-.ov-treemap-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
+/* ── SECTION 3 — overrun-by-sector table (CPV division, aggregate growth, € at risk) ── */
 .ov-sector-list-panel {
   padding: 12px 16px 14px;
 }
@@ -5274,9 +5269,9 @@ tbody td,
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-/* the scale/note captions now hold a label + the button */
-.ov-board-scale,
-.ov-panel-note {
+/* the scale caption holds a label + the button (the matching .ov-panel-note layout lives with its
+   base rule above) */
+.ov-board-scale {
   display: inline-flex;
   align-items: center;
   gap: 10px;

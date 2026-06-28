@@ -46,20 +46,6 @@ export function formatGrowthFactor(pctRatio: number): string {
   return `${s}×`;
 }
 
-// Warm sequential ramp for the sector treemap: low growth → muted clay #E8C9B8, high growth → deep
-// rust #8A2F12 (a documented two-stop gradient — the cell COLOUR encodes growth, while the cell AREA
-// encodes € at risk). t is the normalised growth position in [0,1]; out-of-range values are clamped so
-// a degenerate (all-equal) range still yields a valid colour. Returned as `rgb(r g b)`. Decorative:
-// the parallel ranked list carries the same growth figures as text + a bucket-shape legend, so colour
-// is never the sole carrier of meaning (WCAG 1.4.1).
-const RAMP_LO: readonly [number, number, number] = [232, 201, 184]; // #E8C9B8
-const RAMP_HI: readonly [number, number, number] = [138, 47, 18]; // #8A2F12
-export function warmRamp(t: number): string {
-  const k = Number.isFinite(t) ? Math.min(1, Math.max(0, t)) : 0;
-  const ch = (i: number) => Math.round(RAMP_LO[i]! + (RAMP_HI[i]! - RAMP_LO[i]!) * k);
-  return `rgb(${ch(0)} ${ch(1)} ${ch(2)})`;
-}
-
 export interface ScatterDatum {
   /** Stable key (contract id) — echoed back so the renderer can wire selection/hover. */
   id: string;

@@ -112,9 +112,9 @@ export interface OverrunSectorRow {
   code: string;
   /** Curated CPV-division label (short name for featured divisions, else the official BG label). */
   label: string;
-  /** Works / goods / services / other — drives the ranked-list dot colour + treemap warm ramp anchor. */
+  /** Works / goods / services / other — drives the sector-table row's dot colour + legend. */
   bucket: CpvBucket;
-  /** € at risk = SUM(delta) of the division's overrun contracts (the treemap cell area). */
+  /** € at risk = SUM(delta) of the division's overrun contracts (the sector table's „€ риск" column). */
   riskEur: number;
   /** Aggregate growth = SUM(delta) / SUM(signing) over the division's overrun contracts (truthful
    *  €-weighted ratio, not an average of per-contract pcts). */

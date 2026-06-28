@@ -508,7 +508,7 @@ function OverrunsDashboard({
   );
 }
 
-// ── SECTION 3 — sector treemap (area = € risk, colour = growth) + ranked list ─────────
+// ── SECTION 3 — overrun-by-sector table (CPV division, aggregate growth, € at risk) ───────────
 const BUCKET_LABEL: Record<OverrunSectorRow['bucket'], string> = {
   works: 'строителство',
   goods: 'доставки',

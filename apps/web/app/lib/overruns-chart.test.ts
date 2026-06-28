@@ -3,23 +3,8 @@ import {
   formatGrowthFactor,
   overrunBarGeometry,
   scatterGeometry,
-  warmRamp,
   type ScatterDatum,
 } from './overruns-chart';
-
-describe('warmRamp', () => {
-  it('anchors the two stops of the documented gradient', () => {
-    expect(warmRamp(0)).toBe('rgb(232 201 184)'); // #E8C9B8 clay
-    expect(warmRamp(1)).toBe('rgb(138 47 18)'); // #8A2F12 rust
-  });
-
-  it('interpolates the midpoint and clamps out-of-range / non-finite input', () => {
-    expect(warmRamp(0.5)).toBe('rgb(185 124 101)');
-    expect(warmRamp(-2)).toBe(warmRamp(0));
-    expect(warmRamp(5)).toBe(warmRamp(1));
-    expect(warmRamp(Number.NaN)).toBe(warmRamp(0));
-  });
-});
 
 describe('overrunBarGeometry', () => {
   it('splits the current value into signing + overrun shares that sum to 100', () => {
