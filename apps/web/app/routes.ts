@@ -11,6 +11,7 @@ export default [
   route('trends.rss', 'routes/trends.rss.tsx'),
   route('map', 'routes/map.tsx'),
   route('competition', 'routes/competition.tsx'),
+  route('overruns', 'routes/overruns.tsx'),
   route('analytics', 'routes/analytics.tsx'),
   route('companies', 'routes/companies.tsx'),
   route('companies.csv', 'routes/companies.csv.tsx'),
