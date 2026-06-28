@@ -7,15 +7,32 @@ import { getSpendingTrend } from './trend';
 // by sector.
 
 const SERIES = [
-  { period: '2022-01', value_eur: 1000, contracts: 10 },
-  { period: '2022-03', value_eur: 3000, contracts: 30 }, // gap at 2022-02
-  { period: '2023-01', value_eur: 5000, contracts: 50 },
+  { period: '2022-01', value_eur: 1000, eu_value_eur: 400, contracts: 10 },
+  { period: '2022-03', value_eur: 3000, eu_value_eur: 0, contracts: 30 }, // gap at 2022-02
+  { period: '2023-01', value_eur: 5000, eu_value_eur: 2500, contracts: 50 },
+];
+const QUARTERS = [
+  { year: '2022', quarter: 1, value_eur: 1000 },
+  { year: '2022', quarter: 4, value_eur: 3000 },
+  { year: '2023', quarter: 1, value_eur: 5000 },
+];
+const SECTOR_YEARS = [
+  { division: '45', year: '2022', value_eur: 1000 },
+  { division: '45', year: '2023', value_eur: 2000 },
 ];
 const COVERAGE = { dated: 80, total: 100 };
 
 interface QueryCall {
   sql: string;
   args: unknown[];
+}
+
+// Route .all() by query shape so the seasonality (quarters) and movers (sectorYears) scans get their
+// own fixtures rather than the period series.
+function resultsFor<T>(sql: string): { results: T[] } {
+  if (sql.includes('AS quarter')) return { results: QUARTERS as T[] };
+  if (sql.includes('AS division')) return { results: SECTOR_YEARS as T[] };
+  return { results: SERIES as T[] };
 }
 
 function fakeDb(capture?: string[], asOf: string | null = null): D1Database {
@@ -27,7 +44,7 @@ function fakeDb(capture?: string[], asOf: string | null = null): D1Database {
           return this;
         },
         async all<T>() {
-          return { results: SERIES as T[] };
+          return resultsFor<T>(sql);
         },
         async first<T>() {
           if (sql.includes('as_of')) return { as_of: asOf } as T;
@@ -92,9 +109,37 @@ describe('getSpendingTrend', () => {
   it('folds months into a per-year summary with year-over-year change', async () => {
     const { years } = await getSpendingTrend(fakeDb(), {});
     expect(years).toEqual([
-      { year: '2022', valueEur: 4000, contracts: 40, yoyPct: null, partial: false },
-      { year: '2023', valueEur: 5000, contracts: 50, yoyPct: 0.25, partial: false }, // (5000 - 4000) / 4000
+      {
+        year: '2022',
+        valueEur: 4000,
+        euValueEur: 400,
+        contracts: 40,
+        yoyPct: null,
+        partial: false,
+      },
+      // (5000 - 4000) / 4000
+      {
+        year: '2023',
+        valueEur: 5000,
+        euValueEur: 2500,
+        contracts: 50,
+        yoyPct: 0.25,
+        partial: false,
+      },
     ]);
+  });
+
+  it('carries the EU-funded slice on each point and folds it into the year summary', async () => {
+    const { points } = await getSpendingTrend(fakeDb(), {});
+    expect(points.find((p) => p.period === '2022-01')).toMatchObject({
+      valueEur: 1000,
+      euValueEur: 400,
+    });
+    // The series SELECT computes the EU slice in the same scan (no extra query).
+    const captured: string[] = [];
+    await getSpendingTrend(fakeDb(captured), {});
+    const series = captured.find((s) => s.includes('GROUP BY period'))!;
+    expect(series).toContain('WHEN c.eu_funded = 1 THEN c.amount_eur');
   });
 
   it('marks the as_of period and year partial and suppresses the partial year YoY', async () => {
@@ -122,14 +167,47 @@ describe('getSpendingTrend', () => {
     expect(year.some((s) => s.includes('substr(c.signed_at, 1, 4) AS period'))).toBe(true);
   });
 
-  it('joins tenders only when a sector filter is set', async () => {
+  it('joins tenders on the series query only when a sector filter is set', async () => {
+    const seriesOf = (sqls: string[]) => sqls.find((s) => s.includes('GROUP BY period'))!;
+
     const plain: string[] = [];
     await getSpendingTrend(fakeDb(plain), {});
-    expect(plain.some((s) => s.includes('JOIN tenders'))).toBe(false);
+    expect(seriesOf(plain).includes('JOIN tenders')).toBe(false);
 
     const filtered: string[] = [];
     await getSpendingTrend(fakeDb(filtered), { sector: '45' });
-    expect(filtered.some((s) => s.includes('JOIN tenders t'))).toBe(true);
+    expect(seriesOf(filtered).includes('JOIN tenders t')).toBe(true);
+  });
+
+  it('returns seasonality quarters and per-sector year rows for the /trends insights', async () => {
+    const { quarters, sectorYears, partialYear } = await getSpendingTrend(
+      fakeDb(undefined, '2023-01-15'),
+      {},
+    );
+    expect(partialYear).toBe('2023');
+    expect(quarters).toContainEqual({ year: '2022', quarter: 4, valueEur: 3000 });
+    expect(sectorYears).toContainEqual({ division: '45', year: '2023', valueEur: 2000 });
+  });
+
+  it('does not run the seasonality / movers scans when includeSectors is false', async () => {
+    const captured: string[] = [];
+    const { quarters, sectorYears } = await getSpendingTrend(
+      fakeDb(captured),
+      {},
+      { includeSectors: false },
+    );
+    expect(quarters).toEqual([]);
+    expect(sectorYears).toEqual([]);
+    expect(captured.some((s) => s.includes('AS quarter'))).toBe(false);
+    expect(captured.some((s) => s.includes('AS division'))).toBe(false);
+  });
+
+  it('drops the sector filter on the movers scan so sectors can be ranked against each other', async () => {
+    const captured: string[] = [];
+    await getSpendingTrend(fakeDb(captured), { sector: '45' });
+    const movers = captured.find((s) => s.includes('AS division'))!;
+    expect(movers).toContain('JOIN tenders t ON t.id = c.tender_id');
+    expect(movers).not.toContain('substr(t.cpv_code, 1, 2) = ?'); // no single-sector restriction
   });
 
   it('scopes the trend by authorityId through the tender authority', async () => {

@@ -1,14 +1,17 @@
-import { Form, Link, useNavigation, useSubmit } from 'react-router';
-import { getEntityNetwork } from '@sigma/db';
+import { Form, Link, useNavigation, useSearchParams, useSubmit } from 'react-router';
+import { count } from '@sigma/shared';
+import { getEntityCounterparties, getEntityNetwork } from '@sigma/db';
 import type { Route } from './+types/network';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
 import { DataTable } from '../components/DataTable';
+import { Pagination } from '../components/Pagination';
 import { NetworkGraph } from '../components/NetworkGraph';
 import { Callout, Section } from '../components/ui';
 import { publicCache } from '../lib/cache';
+import { PAGE_SIZE, pageNav } from '../lib/filters';
 import { centerToken, parseCenter } from '../lib/network-center';
-import { networkColumns, networkRows } from '../lib/entity-tables';
+import { counterpartyRows, networkColumns } from '../lib/entity-tables';
 
 export function meta(_: Route.MetaArgs) {
   return [
@@ -26,21 +29,49 @@ export function headers() {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const center = parseCenter(new URL(request.url).searchParams.get('center'));
-  const data = await getEntityNetwork(context.cloudflare.env.DB, center);
+  const sp = new URL(request.url).searchParams;
+  const center = parseCenter(sp.get('center'));
+  const db = context.cloudflare.env.DB;
+  // `g=1` marks a client re-centre fetch (NetworkGraph.recentre): it consumes only the graph data, so
+  // skip the centre-picker options (unchanged) and the counterparties page (the address bar — and the
+  // table — don't change on re-centre). Avoids paying for queries the result throws away.
+  const graphOnly = sp.get('g') === '1';
+  const data = await getEntityNetwork(db, center, { includeCenterOptions: !graphOnly });
   // A well-formed but non-existent ?center should 404 like the other entity pages, not render an
   // empty 200 that then gets edge-cached. A missing or malformed ?center keeps the default centre.
   if (center && !data.center) {
     throw new Response('Not Found', { status: 404 });
   }
-  return { data };
+  // Exhaustive, paginated counterparty list for the resolved centre (`data.center` is the effective
+  // centre — the default hub when ?center is absent). The graph caps at the top few; this is the full
+  // set, so a big hub's hundreds of counterparties are all reachable below the graph.
+  const counterparties =
+    !graphOnly && data.center
+      ? await getEntityCounterparties(
+          db,
+          { kind: data.center.kind, id: data.center.id },
+          // Reuse the count getEntityNetwork already computed — no second identical COUNT(*) on /network.
+          { cursor: sp.get('cursor'), pageSize: PAGE_SIZE.network, total: data.counterpartyTotal },
+        )
+      : null;
+  return { data, counterparties };
 }
 
 export default function Network({ loaderData }: Route.ComponentProps) {
-  const { data } = loaderData;
+  const { data, counterparties } = loaderData;
+  const [sp] = useSearchParams();
   const submit = useSubmit();
   const navigating = useNavigation().state !== 'idle';
   const centerValue = data.center ? centerToken(data.center) : '';
+  const cpNav = counterparties
+    ? pageNav({
+        base: sp,
+        total: counterparties.total,
+        pageSize: PAGE_SIZE.network,
+        nextCursor: counterparties.nextCursor,
+        prevCursor: counterparties.prevCursor,
+      })
+    : null;
 
   return (
     <>
@@ -98,14 +129,31 @@ export default function Network({ loaderData }: Route.ComponentProps) {
               <NetworkGraph data={data} />
             </Section>
 
-            <Section id="links" title="Връзки в графа">
-              <DataTable
-                columns={networkColumns}
-                rows={networkRows(data)}
-                getKey={(r) => `${r.from}-${r.to}`}
-                caption="Връзки в графа"
-              />
-            </Section>
+            {counterparties && counterparties.total > 0 && (
+              <Section
+                id="links"
+                title={`Всички връзки (${count(counterparties.total)})`}
+                hint={
+                  counterparties.total > data.edges.filter((e) => e.from === data.center?.id).length
+                    ? `Графиката показва само най-големите по стойност; тук е пълният списък с ${count(
+                        counterparties.total,
+                      )} връзки, по страници.`
+                    : 'Пълният списък с връзките на избраната същност.'
+                }
+              >
+                <DataTable
+                  columns={networkColumns}
+                  rows={counterpartyRows(counterparties)}
+                  // Key on the slug hrefs, not the display labels — two different entities can share a
+                  // de-branded name and would otherwise collide (React key warning).
+                  getKey={(r) => `${r.fromHref}-${r.toHref}`}
+                  caption="Всички връзки"
+                />
+                {cpNav && counterparties.total > PAGE_SIZE.network && (
+                  <Pagination nav={cpNav} pageSize={PAGE_SIZE.network} unit="връзки" />
+                )}
+              </Section>
+            )}
           </>
         ) : (
           <Callout variant="warning" title="Няма достатъчно връзки">

@@ -98,7 +98,12 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
   const loading = fetcher.state === 'loading';
   const recentred = Boolean(current.center && data.center && current.center.id !== data.center.id);
 
-  const { nodes, edges, center } = current;
+  const { nodes, edges, center, counterpartyTotal } = current;
+  // The graph only draws the top few direct counterparties (HOP1) for readability. Count how many are
+  // actually drawn and, when the centre has more, say so plainly rather than letting the cap read as
+  // "this is all there is" — the full list lives in the relations table on /network.
+  const directShown = center ? edges.filter((e) => e.from === center.id).length : 0;
+  const truncated = counterpartyTotal > directShown;
 
   const maxVal = Math.max(1, ...nodes.map((n) => n.valueEur));
   // Stable per `current` so the force effect (which depends on it) doesn't re-init every render/tick.
@@ -141,6 +146,12 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
   const hoveredDegree = hoveredNode
     ? edges.filter((e) => e.from === hoveredNode.id || e.to === hoveredNode.id).length
     : 0;
+  // The centre's true number of direct counterparties is the full count (counterpartyTotal), NOT its
+  // in-graph degree — the graph only draws the top HOP1. Showing the drawn degree (6) next to a list
+  // of 310 was the bug. Hop-1/hop-2 nodes only appear in this bounded ego view, so their real degree
+  // is unknown here; for them the in-graph degree is the honest figure.
+  const hoveredIsCenter = hoveredNode?.hop === 0;
+  const hoveredRelations = hoveredIsCenter ? counterpartyTotal : hoveredDegree;
   const nodeClass = (id: string) =>
     hovering && !adjacent.has(id) ? 'is-dim' : id === hoveredId ? 'is-focus' : undefined;
   const edgeDimmed = (e: { from: string; to: string }) =>
@@ -155,7 +166,10 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
   const recentre = (n: NetworkNode) => {
     setFailed(false);
     pending.current = true;
-    fetcher.load(`/network?center=${centerToken(n)}`);
+    // `g=1` = graph-only fetch: the loader skips the centre-picker options and the paginated
+    // counterparties (both unchanged by a re-centre and never read from this result), so a node click
+    // doesn't pay for queries it throws away.
+    fetcher.load(`/network?center=${centerToken(n)}&g=1`);
   };
   const reset = () => {
     pending.current = false;
@@ -259,11 +273,14 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
                 let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
                 if (deg > 90) deg -= 180;
                 else if (deg < -90) deg += 180;
+                // A near-vertical edge would rotate the label to read bottom-to-top (and clip against the
+                // viewBox), so for steep edges keep the text horizontal and push it further to the side.
+                const steep = Math.abs(deg) > 55;
                 // Bias the label toward the OUTER node (`to` is always the more-peripheral endpoint) so the
                 // labels of the spokes radiating from the hub fan out instead of piling up on the centre,
                 // and nudge it off the line along the perpendicular.
                 const t = 0.62;
-                const off = 10;
+                const off = steep ? 24 : 10;
                 const lx = a.x + dx * t + (-dy / L) * off;
                 const ly = a.y + dy * t + (dx / L) * off;
                 return (
@@ -286,7 +303,7 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
                       y={ly}
                       textAnchor="middle"
                       dominantBaseline="central"
-                      transform={`rotate(${deg} ${lx} ${ly})`}
+                      transform={steep ? undefined : `rotate(${deg} ${lx} ${ly})`}
                     >
                       {moneyBare(e.valueEur)}
                       {/* Append the contract count only when >1 (a single contract is the common case
@@ -346,6 +363,10 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
                     key={n.id}
                     href={heroHref(n)}
                     aria-label={`Пренасочи графа към ${n.label}`}
+                    // Off the keyboard tab path: a `role="img"` SVG must not contain interactive
+                    // descendants, and the relations table below is the canonical keyboard/AT path. The
+                    // pointer click + no-JS <a> fallback still work; only sequential focus is removed.
+                    tabIndex={-1}
                     data-node-id={n.id}
                     data-draggable="1"
                     className={nodeClass(n.id)}
@@ -392,8 +413,8 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
                   <dd>{money(hoveredNode.valueEur)}</dd>
                 </div>
                 <div>
-                  <dt>Връзки в графа</dt>
-                  <dd>{count(hoveredDegree)}</dd>
+                  <dt>{hoveredIsCenter ? 'Връзки общо' : 'Връзки в графа'}</dt>
+                  <dd>{count(hoveredRelations)}</dd>
                 </div>
               </dl>
               {hoveredNode.hop !== 0 && (
@@ -420,6 +441,15 @@ export function NetworkGraph({ data }: { data: NetworkData }) {
           <span className="key company" /> Фирма
         </li>
       </ul>
+      {truncated && center && (
+        <p className="net-caption muted">
+          Графиката показва {count(directShown)} от общо {count(counterpartyTotal)} връзки
+          (най-големите по стойност).{' '}
+          {/* Raw token (no encodeURIComponent), matching recentre() — the `a:`/`c:` grammar is
+              provably URL-safe (digits or base64url; the only `:` is the separator the loader splits on). */}
+          <a href={`/network?center=${centerToken(center)}#links`}>Виж всички</a>.
+        </p>
+      )}
     </div>
   );
 }

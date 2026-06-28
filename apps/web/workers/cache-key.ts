@@ -1,7 +1,11 @@
 // Keep this allow-list in sync with query params consumed by apps/web/app/routes loaders.
 export const CACHE_QUERY_PARAMS = new Set([
+  'a', // /compare — entity A slug
   'authority',
+  'b', // /compare — entity B slug
   'bidder',
+  'bids', // /contracts: c.bids_received = 1 — changes the result set and headline totals (CWE-349, #56)
+  'by', // /overruns — sort dimension (absolute | percent)
   'center',
   'count',
   'cursor',
@@ -9,7 +13,9 @@ export const CACHE_QUERY_PARAMS = new Set([
   'funding',
   'g',
   'kind',
+  'metric', // /compare leaderboard dimension
   'p',
+  'page', // pagination offset — distinct pages must not share a cache entry
   'procedure',
   'q',
   'sector',

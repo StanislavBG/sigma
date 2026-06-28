@@ -57,3 +57,5 @@ worker-configuration.d.ts
 
 # stray placeholder artifact (not part of the project)
 <path>
+
+.claude/worktrees/
