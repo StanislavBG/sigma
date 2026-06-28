@@ -7,6 +7,7 @@ import type { Route } from './+types/trends';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
 import { TrendComboChart } from '../components/TrendComboChart';
+import { FullscreenButton, useFullscreen } from '../components/FullscreenButton';
 import { Callout } from '../components/ui';
 import { publicCache } from '../lib/cache';
 import { buildForecast, estimateYoyGrowth } from '../lib/trends-forecast';
@@ -117,6 +118,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
     ? String(activeYear)
     : `${firstYear}–${lastYear} · ръст ${growthTxt}/год`;
   const chartTitle = activeYear ? `Разходи по месеци · ${activeYear}` : `Разходи по ${axisWord}`;
+  const chartFs = useFullscreen<HTMLDivElement>();
   const ariaLabel = `Разходи за обществени поръчки и брой договори по ${axisWord}${
     activeYear ? `, ${activeYear} г.` : ''
   }. Колоните са броят договори, плътната линия е трендът на стойността, а пунктираният участък „ПРОГНОЗА" е сезонна прогноза. Точните стойности са в таблицата „По години" по-долу.`;
@@ -244,7 +246,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
         <div className="trend-grid">
           <div className="trend-col">
             {/* chart panel */}
-            <div className="trend-panel trend-chart-panel">
+            <div className="trend-panel trend-chart-panel" ref={chartFs.ref}>
               <div className="trend-panel-head">
                 <h2 className="trend-panel-title">{chartTitle}</h2>
                 <div className="trend-legend">
@@ -252,6 +254,7 @@ export default function Trends({ loaderData }: Route.ComponentProps) {
                   <LegendItem swatch={<Swatch line />}>тренд €</LegendItem>
                   {hasForecast && <LegendItem swatch={<Swatch dashed />}>прогноза</LegendItem>}
                   <span className="trend-legend-meta">{chartMeta}</span>
+                  <FullscreenButton active={chartFs.isFullscreen} onToggle={chartFs.toggle} />
                 </div>
               </div>
               <div className="trend-chart-body">

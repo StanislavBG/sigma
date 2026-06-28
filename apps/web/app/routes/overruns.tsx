@@ -12,6 +12,7 @@ import type { Route } from './+types/overruns';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
+import { FullscreenButton, useFullscreen } from '../components/FullscreenButton';
 import { Callout, Section } from '../components/ui';
 import { publicCache } from '../lib/cache';
 import { withDbRetry } from '../lib/retry';
@@ -338,16 +339,21 @@ function OverrunsDashboard({ rows }: { rows: OverrunRow[] }) {
   const [selected, setSelected] = useState(0);
   const scaleMax = Math.max(1, ...rows.map((r) => r.currentEur));
   const sel = rows[selected] ?? rows[0]!;
+  const boardFs = useFullscreen<HTMLDivElement>();
+  const scatterFs = useFullscreen<HTMLDivElement>();
 
   return (
     <div className="overruns-grid">
       {/* LEFT — leaderboard bars (buttons select the inspector; figures are text) */}
-      <div className="ov-panel ov-board">
+      <div className="ov-panel ov-board" ref={boardFs.ref}>
         <div className="ov-board-head">
           <div className="ov-board-title">
             Най-голямо <em>раздуване</em>
           </div>
-          <div className="ov-board-scale">скала 0 — {moneyBare(scaleMax)}</div>
+          <div className="ov-board-scale">
+            <span>скала 0 — {moneyBare(scaleMax)}</span>
+            <FullscreenButton active={boardFs.isFullscreen} onToggle={boardFs.toggle} />
+          </div>
         </div>
         <ol className="scrolly ov-board-list">
           {rows.map((r, i) => {
@@ -387,10 +393,13 @@ function OverrunsDashboard({ rows }: { rows: OverrunRow[] }) {
 
       {/* RIGHT — scatter cloud + inspector */}
       <div className="ov-right">
-        <div className="ov-panel ov-scatter-panel">
+        <div className="ov-panel ov-scatter-panel" ref={scatterFs.ref}>
           <div className="ov-scatter-head">
             <div className="ov-panel-title">Облак на раздуването</div>
-            <div className="ov-panel-note">размер = брой анекси</div>
+            <div className="ov-panel-note">
+              <span>размер = брой анекси</span>
+              <FullscreenButton active={scatterFs.isFullscreen} onToggle={scatterFs.toggle} />
+            </div>
           </div>
           <div className="ov-scatter-body">
             <OverrunScatter rows={rows} selected={selected} />
