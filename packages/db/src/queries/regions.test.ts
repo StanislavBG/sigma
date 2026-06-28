@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getRegionalSpending } from './regions';
+import { getRegionalSpending, getRegionHeadline } from './regions';
 
 // Fake D1 keyed by SQL markers (same approach as competition.test.ts). Verifies the JS-side
 // aggregation: region name -> NUTS3 mapping, the always-28 zero-fill, the unattributed bucket,
@@ -81,5 +81,44 @@ describe('getRegionalSpending', () => {
     await getRegionalSpending(fakeDb(filtered), { sector: '45' });
     expect(filtered.some((s) => s.includes('FROM authority_totals'))).toBe(false);
     expect(filtered.some((s) => s.includes('JOIN tenders t'))).toBe(true);
+  });
+});
+
+describe('getRegionHeadline', () => {
+  function fakeDb(rows: { region: string | null; value_eur: number }[]): D1Database {
+    return {
+      prepare() {
+        return {
+          async all<T>() {
+            return { results: rows as T[] };
+          },
+        };
+      },
+    } as unknown as D1Database;
+  }
+
+  it('reports the 28-region count and София-столица share of the national total', async () => {
+    const h = await getRegionHeadline(
+      fakeDb([
+        { region: 'София (столица)', value_eur: 6000 }, // BG411
+        { region: 'Пловдив', value_eur: 3000 },
+        { region: null, value_eur: 1000 }, // unattributed, still in the denominator
+      ]),
+    );
+    expect(h.regionCount).toBe(28);
+    expect(h.sofiaEur).toBe(6000);
+    expect(h.totalEur).toBe(10000);
+    expect(h.sofiaShare).toBeCloseTo(0.6);
+  });
+
+  it('does not count the surrounding София oblast (BG412) as the capital', async () => {
+    const h = await getRegionHeadline(
+      fakeDb([
+        { region: 'София', value_eur: 5000 }, // BG412 — not the capital
+        { region: 'София (столица)', value_eur: 5000 }, // BG411
+      ]),
+    );
+    expect(h.sofiaEur).toBe(5000);
+    expect(h.sofiaShare).toBeCloseTo(0.5);
   });
 });

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getOverrunAnnexes, getOverrunsAnalytics, getTopOverruns } from './overruns';
+import {
+  getOverrunAnnexes,
+  getOverrunsAnalytics,
+  getOverrunsHeadline,
+  getTopOverruns,
+} from './overruns';
 
 // getTopOverruns runs two statements (see overruns.ts): a leaderboard SELECT (carries ORDER BY +
 // LIMIT, read via .all) and a corpus-totals SELECT (COUNT(*)/SUM, read via .first). There's no real
@@ -497,5 +502,30 @@ describe('getOverrunAnnexes', () => {
     const [a] = await getOverrunAnnexes(db, ['c:123']);
 
     expect(a!.reason).toBeNull();
+  });
+});
+
+describe('getOverrunsHeadline', () => {
+  // One statement, one row out: the two figures the /analytics card shows.
+  function fakeDb(row: { total_overrun_eur: number; median_pct: number } | null): D1Database {
+    return {
+      prepare() {
+        return {
+          async first<T>() {
+            return row as T;
+          },
+        };
+      },
+    } as unknown as D1Database;
+  }
+
+  it('returns the corpus total overrun and median growth pct', async () => {
+    const h = await getOverrunsHeadline(fakeDb({ total_overrun_eur: 4200000, median_pct: 2.1 }));
+    expect(h).toEqual({ totalOverrunEur: 4200000, medianPct: 2.1 });
+  });
+
+  it('defaults to zeroes when the corpus is empty', async () => {
+    const h = await getOverrunsHeadline(fakeDb(null));
+    expect(h).toEqual({ totalOverrunEur: 0, medianPct: 0 });
   });
 });

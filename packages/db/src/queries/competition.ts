@@ -314,6 +314,37 @@ export async function getCompetition(
   };
 }
 
+// Single-offer (one-bid) VALUE share per signing year, for the /analytics landing „Конкуренция"
+// card. Same basis as competitionTotals.singleOfferValueShare (contracts with a known offer count,
+// amount_eur IS NOT NULL, the site-wide value basis) so the landing matches the /competition
+// dashboard. ONE bounded GROUP BY over the 2020→today window (a handful of year rows out).
+export interface OpaqueYearRow {
+  year: string;
+  valueEur: number;
+  singleOfferValueEur: number;
+}
+
+export async function getOpaqueShareByYear(db: D1Database): Promise<OpaqueYearRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT substr(c.signed_at, 1, 4) AS year,
+              COALESCE(SUM(c.amount_eur), 0) AS value_eur,
+              COALESCE(SUM(CASE WHEN c.bids_received = 1 THEN c.amount_eur ELSE 0 END), 0) AS single_value_eur
+       FROM contracts c
+       WHERE c.amount_eur IS NOT NULL
+         AND c.bids_received IS NOT NULL AND c.bids_received >= 1
+         AND substr(c.signed_at, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
+         AND c.signed_at >= '2020-01-01' AND c.signed_at <= date('now')
+       GROUP BY year ORDER BY year`,
+    )
+    .all<{ year: string; value_eur: number; single_value_eur: number }>();
+  return results.map((r) => ({
+    year: r.year,
+    valueEur: r.value_eur,
+    singleOfferValueEur: r.single_value_eur,
+  }));
+}
+
 export async function getCompetitionSummary(
   db: D1Database,
   p: CompetitionParams = {},

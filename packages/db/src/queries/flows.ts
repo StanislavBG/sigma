@@ -183,6 +183,25 @@ const SECTOR_OPTION_LIMIT = 12;
 const DEFAULT_TOP = 20;
 const MAX_TOP = 50;
 
+// Lean headline for the /analytics landing card — the two counts the „Потоци" card shows:
+// how many authorities are on record (authority_totals) and how many distinct authority→company
+// pairs the Sankey draws from (flow_pairs). Both are rollup-table COUNT(*)s, folded into ONE
+// statement (two scalar subqueries → one round trip), so the card never scans contracts.
+export interface FlowsHeadline {
+  authorities: number;
+  pairs: number;
+}
+
+export async function getFlowsHeadline(db: D1Database): Promise<FlowsHeadline> {
+  const row = await db
+    .prepare(
+      `SELECT (SELECT COUNT(*) FROM authority_totals) AS authorities,
+              (SELECT COUNT(*) FROM flow_pairs) AS pairs`,
+    )
+    .first<{ authorities: number; pairs: number }>();
+  return { authorities: row?.authorities ?? 0, pairs: row?.pairs ?? 0 };
+}
+
 export async function getFlows(db: D1Database, p: FlowsParams): Promise<FlowsData> {
   const requestedTop = Number.isInteger(p.top) ? p.top! : DEFAULT_TOP;
   const top = requestedTop >= 1 && requestedTop <= MAX_TOP ? requestedTop : DEFAULT_TOP;

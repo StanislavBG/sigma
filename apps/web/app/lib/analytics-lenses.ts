@@ -23,7 +23,6 @@ export const ANALYTICS_LENSES = [
     href: '/overruns',
     title: 'Раздуване',
     desc: 'Кои договори, институции и сектори се раздуват най-много след сключване — и тенденцията във времето.',
-    hero: true,
   },
   {
     href: '/compare',

@@ -323,6 +323,36 @@ export async function getOverrunAnnexes(
 
 const SECTOR_LABELS = new Map(CPV_SECTORS.map((s) => [s.code, s.short ?? s.label]));
 
+// Lean corpus headline for the /analytics landing card — just the two figures the card shows
+// (total ballooning € + median growth ratio), in ONE statement. Mirrors the definitions in
+// getOverrunsAnalytics (same OVERRUN_WHERE, same DELTA / median window) so the landing never
+// disagrees with the /overruns dashboard. Two scalar subqueries → one round trip.
+export interface OverrunsHeadline {
+  totalOverrunEur: number;
+  medianPct: number;
+}
+
+export async function getOverrunsHeadline(db: D1Database): Promise<OverrunsHeadline> {
+  const row = await db
+    .prepare(
+      `SELECT
+         (SELECT COALESCE(SUM(${DELTA}), 0) FROM contracts c WHERE ${OVERRUN_WHERE}) AS total_overrun_eur,
+         (SELECT COALESCE(AVG(pct), 0) FROM (
+            SELECT pct,
+                   ROW_NUMBER() OVER (ORDER BY pct) AS rn,
+                   COUNT(*) OVER () AS n
+            FROM (
+              SELECT ${PCT} AS pct FROM contracts c WHERE ${OVERRUN_WHERE}
+            )
+          ) WHERE rn IN ((n + 1) / 2, (n + 2) / 2)) AS median_pct`,
+    )
+    .first<{ total_overrun_eur: number; median_pct: number }>();
+  return {
+    totalOverrunEur: row?.total_overrun_eur ?? 0,
+    medianPct: row?.median_pct ?? 0,
+  };
+}
+
 export async function getTopOverruns(
   db: D1Database,
   { by, limit }: OverrunsParams,

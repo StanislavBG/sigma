@@ -28,6 +28,12 @@
   --color-accent: oklch(48% 0.18 28); /* red — links/warnings */
   --color-accent-bg: oklch(94% 0.04 28);
   --color-pos: oklch(45% 0.1 165); /* teal — positive deltas */
+  /* Decorative editorial accents (already the trend-dashboard chart palette: slate #5E7C8B count
+     series, tan #C4B79C € line). Promoted to shared tokens so the /analytics landing thumbnails and
+     the „парите" highlight read from the palette, not raw hexes. Never the sole carrier of meaning —
+     the slate word is also italic; the thumbnails are aria-hidden decoration. */
+  --color-slate: oklch(55% 0.035 233);
+  --color-tan: oklch(77% 0.03 90);
 
   --font-sans:
     system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
@@ -51,6 +57,8 @@
   --accent: var(--color-accent);
   --accent-bg: var(--color-accent-bg);
   --pos: var(--color-pos);
+  --slate: var(--color-slate);
+  --tan: var(--color-tan);
 
   /* Legacy token aliases — keep page-local inline styles working */
   --bg: var(--paper);
@@ -1655,127 +1663,246 @@ details.row .body .signal .why {
   color: var(--ink-mid);
 }
 
-/* Richer analytics hub lens cards: keep the editorial tile chrome, but give each lens room for a
-   live data teaser. */
-.tiles.analytics-lenses {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+/* ===== analyze-landing =====
+   The /analytics hub: an editorial masthead + five EQUAL full-width hero cards (one per analysis),
+   each pairing two real KPI figures with a decorative, aria-hidden thumbnail. Cards are real anchors
+   (keyboard-focusable, visible focus ring); the 380px thumbnail pane collapses under ~720px. */
+.analyze-landing {
+  max-width: 1120px;
+  margin: 0 auto;
 }
-.tiles.analytics-lenses .tile:nth-child(2n + 1) {
-  padding-left: 0;
+.az-masthead {
+  margin: 0 0 var(--s-7);
 }
-.tiles.analytics-lenses .tile:nth-child(2n) {
-  border-right: 0;
+.az-kicker {
+  margin: 0 0 var(--s-4);
+  font: 10px/1.3 var(--font-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
-.lens-card {
+.az-title {
+  margin: 0 0 var(--s-4);
+  max-width: 18ch;
+  font: 600 40px/1.1 var(--font-serif);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.az-title em {
+  font-style: italic;
+  color: var(--accent);
+}
+.az-lede {
+  margin: 0;
+  max-width: 600px;
+  font: 14px/1.55 var(--font-sans);
+  color: var(--ink-mid);
+}
+
+.az-cards {
   display: flex;
   flex-direction: column;
-  min-height: 360px;
+  gap: 18px;
 }
-.lens-preview {
-  margin-top: var(--s-4);
-  padding-top: var(--s-3);
-  border-top: 1px solid var(--rule-soft);
+
+/* One hero card — left editorial pane + right thumbnail pane. */
+.az-card {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  min-height: 208px;
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px oklch(18% 0.012 70 / 0.04);
+  text-decoration: none;
+  color: inherit;
+  overflow: hidden;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
 }
-.lens-preview-title {
-  margin-bottom: var(--s-2);
-  font: 500 10.5px/1.35 var(--font-mono);
-  letter-spacing: 0.14em;
+.az-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px oklch(18% 0.012 70 / 0.1);
+  border-color: var(--ink-soft);
+}
+.az-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .az-card {
+    transition: none;
+  }
+  .az-card:hover {
+    transform: none;
+  }
+}
+
+.az-card-main {
+  display: flex;
+  flex-direction: column;
+  padding: 26px 30px;
+  min-width: 0;
+}
+.az-card-eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-3);
+  margin: 0 0 var(--s-3);
+}
+.az-card-index {
+  font: 600 10px/1.3 var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.az-card-cat {
+  font: 500 9px/1.3 var(--font-mono);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-soft);
 }
-.lens-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border-top: 1px solid var(--rule);
-}
-.lens-list li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px var(--s-3);
-  padding: var(--s-2) 0;
-  border-bottom: 1px solid var(--rule-soft);
-  align-items: baseline;
-}
-.lens-name {
-  min-width: 0;
-  font: 14px/1.35 var(--font-sans);
+.az-card-title {
+  margin: 0 0 var(--s-2);
+  font: 600 25px/1.2 var(--font-serif);
   color: var(--ink);
 }
-.lens-value {
-  font: 12px/1.2 var(--font-mono);
+.az-card-title em {
+  font-style: italic;
+  color: var(--accent);
+}
+.az-card-title em.az-em-slate {
+  color: var(--slate);
+}
+.az-card-desc {
+  margin: 0;
+  max-width: 420px;
+  font: 13px/1.5 var(--font-sans);
   color: var(--ink-mid);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-.lens-meta,
-.lens-share {
-  grid-column: 1 / -1;
-  font: 12px/1.35 var(--font-mono);
-  color: var(--ink-soft);
-}
-.lens-share .share {
-  width: 100%;
+.az-card-foot {
+  display: flex;
+  align-items: flex-end;
   justify-content: space-between;
+  gap: var(--s-4);
+  margin-top: auto;
+  padding-top: var(--s-5);
 }
-.lens-share .share-bar {
-  flex: 1;
-  width: auto;
-}
-.lens-chart {
-  margin: var(--s-2) 0 var(--s-3);
-  border-bottom: 1px solid var(--rule-soft);
-}
-.lens-chart .trend-svg {
-  max-height: 150px;
-}
-.lens-map {
-  margin: var(--s-2) auto var(--s-3);
-  max-width: 320px;
-}
-.lens-map .map-wrap svg {
-  max-width: 100%;
-}
-.lens-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s-3);
+.az-card-stats {
+  display: flex;
+  gap: var(--s-6);
   margin: 0;
 }
-.lens-metrics dt {
-  margin-bottom: 4px;
-  font: 500 10.5px/1.25 var(--font-mono);
+.az-card-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.az-stat-num {
+  margin: 0;
+  font: 600 19px/1.1 var(--font-mono);
+  color: var(--ink);
+}
+.az-stat-num--accent {
+  color: var(--accent);
+}
+.az-stat-label {
+  font: 500 8px/1.3 var(--font-mono);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-soft);
 }
-.lens-metrics dd {
-  margin: 0;
-  font: 14px/1.35 var(--font-sans);
-  color: var(--ink);
-}
-.lens-link {
-  margin-top: auto;
-  padding-top: var(--s-4);
-  font: 500 14px/1.3 var(--font-sans);
-}
-.lens-link a {
+.az-card-cta {
+  flex: none;
+  font: 600 11px/1.3 var(--font-mono);
+  letter-spacing: 0.04em;
   color: var(--accent);
+  white-space: nowrap;
 }
+
+/* Right pane — a touch deeper than the card, with a decorative thumbnail. */
+.az-card-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--paper-deep);
+  border-left: 1px solid var(--rule);
+}
+.az-thumb {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+}
+.az-fill-ink {
+  fill: var(--ink);
+}
+.az-fill-accent {
+  fill: var(--accent);
+}
+.az-fill-slate {
+  fill: var(--slate);
+}
+.az-fill-tan {
+  fill: var(--tan);
+}
+.az-fill-rule {
+  fill: var(--rule);
+}
+.az-thumb-soft {
+  opacity: 0.55;
+}
+.az-thumb-faint {
+  opacity: 0.14;
+}
+.az-stroke-ink,
+.az-stroke-accent {
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.az-stroke-ink {
+  stroke: var(--ink);
+}
+.az-stroke-accent {
+  stroke: var(--accent);
+}
+.az-thumb-dash {
+  stroke-dasharray: 5 5;
+}
+
 @media (max-width: 720px) {
-  .tiles.analytics-lenses {
+  .az-title {
+    font-size: 32px;
+  }
+  .az-card {
     grid-template-columns: 1fr;
   }
-  .tiles.analytics-lenses .tile {
-    padding-left: 0;
-    border-right: 0;
+  .az-card-thumb {
+    border-left: 0;
+    border-top: 1px solid var(--rule);
+    padding: 16px 20px;
   }
-  .lens-card {
-    min-height: 0;
-  }
-  .lens-metrics {
-    grid-template-columns: 1fr;
+  .az-thumb {
+    max-width: 240px;
   }
 }
+@media (max-width: 460px) {
+  .az-card-foot {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-3);
+  }
+}
+/* ===== end analyze-landing ===== */
 
 /* Helper text */
 .muted {
@@ -4847,98 +4974,6 @@ tbody td,
 @media (max-width: 860px) {
   .overruns-grid {
     grid-template-columns: 1fr;
-  }
-}
-
-/* /analytics „Раздуване" hero tile */
-.overruns-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: 0;
-  margin-bottom: var(--s-5);
-  border: 1px solid var(--rule);
-  border-top: 3px solid var(--accent);
-  border-radius: 4px;
-  background: var(--paper-warm);
-  overflow: hidden;
-  color: var(--ink);
-  text-decoration: none;
-  transition:
-    box-shadow 0.15s ease,
-    border-color 0.15s ease;
-}
-.overruns-hero:hover {
-  box-shadow: 0 2px 14px color-mix(in oklch, var(--ink) 8%, transparent);
-  border-color: var(--ink-soft);
-}
-.overruns-hero:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.overruns-hero-kicker {
-  color: var(--accent);
-}
-.overruns-hero-main {
-  padding: var(--s-5);
-}
-.overruns-hero-title {
-  margin: var(--s-2) 0 0;
-  font: 600 26px/1.1 var(--font-serif);
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-.overruns-hero-title em {
-  font-style: italic;
-  color: var(--accent);
-}
-.overruns-hero .desc {
-  margin-top: var(--s-2);
-  max-width: 46ch;
-  color: var(--ink-mid);
-}
-.overruns-hero-kpis {
-  display: flex;
-  gap: var(--s-5);
-  margin: var(--s-4) 0 0;
-  padding: var(--s-3) 0 0;
-  border-top: 1px solid var(--rule);
-}
-.overruns-hero-kpis .num {
-  margin: 0;
-  font: 600 22px/1 var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-}
-.overruns-hero-kpis dt {
-  margin-top: 6px;
-  font: 500 9px/1 var(--font-mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-.overruns-hero .lens-link {
-  margin-top: var(--s-4);
-}
-.overruns-hero .lens-link span {
-  color: var(--accent);
-  font: 500 12px/1 var(--font-mono);
-  letter-spacing: 0.04em;
-}
-.overruns-hero-aside {
-  padding: var(--s-5);
-  border-left: 1px solid var(--rule);
-  background: var(--paper);
-}
-.overruns-hero-aside .lens-value-accent {
-  color: var(--accent);
-}
-@media (max-width: 760px) {
-  .overruns-hero {
-    grid-template-columns: 1fr;
-  }
-  .overruns-hero-aside {
-    border-left: none;
-    border-top: 1px solid var(--rule);
   }
 }
 /* ===== end overruns-dashboard ===== */
