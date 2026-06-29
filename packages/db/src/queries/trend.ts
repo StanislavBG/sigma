@@ -4,8 +4,8 @@
 // usable signing date are excluded from the series and reported as coverage. Edge-cached at the route,
 // like getFlows; precompute is a possible follow-up.
 
-import type { SectorRef, TrendData, TrendPoint, TrendYear } from '@sigma/api-contract';
-import { CPV_SECTORS } from '@sigma/config';
+import type { TrendData, TrendPoint, TrendYear } from '@sigma/api-contract';
+import { sectorOptions } from './sectors';
 
 // /trends-only extras layered on top of TrendData: the EU-funded slice of each point/year (for the
 // EU-vs-national split), the partial year (so the page can exclude it from derived stats), and the
@@ -127,6 +127,11 @@ function crossSectorScope(p: TrendParams): { where: string[]; params: unknown[] 
 // month → quarter (1..4) on the signing date: (m + 2) / 3 in integer arithmetic.
 const QUARTER_EXPR = '((CAST(substr(c.signed_at, 6, 2) AS INTEGER) + 2) / 3)';
 
+// A full year+month signing date ('YYYY-MM…'). Year-only dates (e.g. '2024') pass YEAR_KNOWN but have
+// no month, so QUARTER_EXPR's substr is '' → CAST 0 → a bogus "quarter 0" that dilutes the Q4
+// seasonality share. The seasonality query requires the month delimiter (position 5 = '-') to drop them.
+const MONTH_KNOWN = "substr(c.signed_at, 5, 1) = '-'";
+
 // Continuous period keys (inclusive) for zero-filling gaps, so the chart has no holes.
 function fillPeriods(first: string, last: string, granularity: 'month' | 'year'): string[] {
   if (granularity === 'year') {
@@ -141,21 +146,6 @@ function fillPeriods(first: string, last: string, granularity: 'month' | 'year')
     out.push(`${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, '0')}`);
   }
   return out;
-}
-
-const SECTOR_OPTION_LIMIT = 12;
-
-// Sector select options: present sectors by value (curated label), capped. Same source as getFlows.
-async function sectorOptions(db: D1Database): Promise<SectorRef[]> {
-  const { results } = await db
-    .prepare(`SELECT division FROM sector_totals ORDER BY value_eur DESC LIMIT ?`)
-    .bind(SECTOR_OPTION_LIMIT)
-    .all<{ division: string }>();
-  const byCode = new Map(CPV_SECTORS.map((s) => [s.code, s]));
-  return results
-    .map((r) => byCode.get(r.division))
-    .filter((s): s is (typeof CPV_SECTORS)[number] => Boolean(s))
-    .map((s) => ({ code: s.code, label: s.short ?? s.label, short: s.short ?? s.label }));
 }
 
 export async function getSpendingTrend(
@@ -173,7 +163,13 @@ export async function getSpendingTrend(
   // The /trends-only insights (seasonality, top movers). Gated behind includeSectors so the
   // entity/analytics embeds never run these extra scans.
   const cs = crossSectorScope(p);
-  const quartersWhere = [YEAR_KNOWN, 'c.signed_at >= ?', "c.signed_at <= date('now')", ...s.where];
+  const quartersWhere = [
+    YEAR_KNOWN,
+    MONTH_KNOWN,
+    'c.signed_at >= ?',
+    "c.signed_at <= date('now')",
+    ...s.where,
+  ];
   const moversWhere = [
     YEAR_KNOWN,
     'c.signed_at >= ?',
