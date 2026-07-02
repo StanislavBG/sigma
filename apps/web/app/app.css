@@ -826,7 +826,7 @@ main.narrow {
   color: var(--ink);
 }
 
-/* Risk Indicators */
+/* Risk Indicators — used by RiskIndicators.tsx on the contract page */
 .risk-indicators {
   margin: var(--s-6) 0;
   padding: var(--s-5);
