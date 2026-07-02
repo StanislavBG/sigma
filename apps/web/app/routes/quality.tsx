@@ -1,4 +1,4 @@
-import { Link } from 'react-router';
+import { Form, Link, useNavigation, useSearchParams, useSubmit } from 'react-router';
 import type {
   QualityContractRow,
   QualityCoverageTier,
@@ -14,9 +14,11 @@ import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
 import { MetricInfo } from '../components/MetricInfo';
+import { Pagination } from '../components/Pagination';
 import { TotalsStrip, type Total } from '../components/TotalsStrip';
 import { Callout, Chip, Section } from '../components/ui';
 import { publicCache } from '../lib/cache';
+import { PAGE_SIZE, pageNav, qualityListFilters, withParams, type PageNav } from '../lib/filters';
 import { seoMeta } from '../lib/meta';
 
 // „Индекс на качеството" — the Contract Quality / Health Index page. Reads the ETL-built
@@ -147,6 +149,10 @@ const COV_TIERS: { tier: QualityCoverageTier; range: string; label: string }[] =
 export async function loader({ request, context }: Route.LoaderArgs) {
   const db = context.cloudflare.env.DB;
   const sp = new URL(request.url).searchParams;
+  // Facet filters come from the shared parser (validated before they can shape a cache key or a
+  // query); pagination is route-specific: `cursor`/`page` page the contracts list (keyset), `rpage`
+  // pages the „Разбивка" rollup (OFFSET — the rollups are small).
+  const filters = qualityListFilters(sp);
   let data = null;
   try {
     data = await getQuality(db, {
@@ -155,6 +161,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       contractSort: sp.get('csort') === 'value' ? 'value' : 'score',
       sel: sp.get('sel'),
       contractId: sp.get('contract'),
+      rankPage: filters.rankPage,
+      filters,
+      cursor: sp.get('cursor'),
+      pageSize: PAGE_SIZE.quality,
     });
   } catch (err) {
     // The health tables are built by the daily ETL (ship-domain rebuilds contract_features
@@ -242,24 +252,72 @@ export default function Quality({ loaderData }: Route.ComponentProps) {
       </main>
     );
   }
-  const { overview, ranking, contracts, scorecard, scope } = data;
+  const {
+    overview,
+    ranking,
+    rankingTotal,
+    contracts,
+    contractsTotal,
+    contractsNextCursor,
+    contractsPrevCursor,
+    facets,
+    scorecard,
+    scope,
+  } = data;
+  const [sp] = useSearchParams();
+  const submit = useSubmit();
+  const navigating = useNavigation().state !== 'idle';
 
-  // Preserve the page state in every internal link (grain/sort/selection/scorecard subject).
-  const qs = (patch: Record<string, string | null>) => {
+  // Preserve the page state in every internal link (grain/sort/selection/facets). Pagination markers
+  // (`cursor`/`page`/`rpage` via patch) are intentionally NOT carried, so any state-changing link
+  // resets its list to page 1; links that must keep the paging (pagers, scorecard subject, csort)
+  // use withParams(sp, …) instead.
+  const qs = (patch: Record<string, string | number | null>) => {
     const params = new URLSearchParams();
-    const state: Record<string, string | null> = {
+    const state: Record<string, string | number | null> = {
       grain: scope.grain === 'authority' ? null : scope.grain,
       sort: scope.sort === 'score' ? null : scope.sort,
       csort: scope.contractSort === 'score' ? null : scope.contractSort,
       sel: scope.sel,
+      year: scope.filters.year,
+      sector: scope.filters.sector,
+      funding: scope.filters.funding,
+      conf: scope.filters.conf,
       ...patch,
     };
-    for (const [k, v] of Object.entries(state)) if (v != null && v !== '') params.set(k, v);
+    for (const [k, v] of Object.entries(state)) if (v != null && v !== '') params.set(k, String(v));
     const s = params.toString();
     return s ? `/quality?${s}` : '/quality';
   };
 
   const selRow = scope.sel ? (ranking.find((r) => r.key === scope.sel) ?? null) : null;
+
+  // „Разбивка" pager — plain page numbers over the small rollup (no cursors needed there).
+  const rankPageCount = Math.max(1, Math.ceil(rankingTotal / scope.top));
+  const rankPage = Math.min(scope.rankPage, rankPageCount);
+  const rankNav: PageNav = {
+    page: rankPage,
+    pageCount: rankPageCount,
+    prevHref:
+      rankPage > 1
+        ? withParams(sp, { rpage: rankPage - 1 > 1 ? rankPage - 1 : null }) || '/quality'
+        : null,
+    nextHref: rankPage < rankPageCount ? withParams(sp, { rpage: rankPage + 1 }) : null,
+  };
+  const rankOffset = (rankPage - 1) * scope.top;
+
+  // Contracts-list pager — keyset cursors bound to the grain/sel/facet signature (shared pageNav).
+  const contractNav = pageNav({
+    base: sp,
+    total: contractsTotal,
+    pageSize: scope.pageSize,
+    nextCursor: contractsNextCursor,
+    prevCursor: contractsPrevCursor,
+  });
+
+  const activeFilters = Boolean(
+    scope.filters.year || scope.filters.sector || scope.filters.funding || scope.filters.conf,
+  );
 
   const totals: Total[] = [
     {
@@ -522,13 +580,21 @@ export default function Quality({ loaderData }: Route.ComponentProps) {
             </span>
           </nav>
 
+          <p className="sr-only" role="status">
+            {navigating
+              ? 'Обновяване на разбивката…'
+              : `Разбивка: ${count(rankingTotal)} ${plural(rankingTotal, 'ред', 'реда')}.`}
+          </p>
           {ranking.length ? (
-            <DataTable
-              columns={rankColumns(scope.grain, qs)}
-              rows={ranking}
-              getKey={(r) => r.key}
-              caption={`${GRAIN_TITLES[scope.grain]} по индекс на качеството`}
-            />
+            <>
+              <DataTable
+                columns={rankColumns(scope.grain, qs, rankOffset)}
+                rows={ranking}
+                getKey={(r) => r.key}
+                caption={`${GRAIN_TITLES[scope.grain]} по индекс на качеството`}
+              />
+              {rankNav.pageCount > 1 && <Pagination nav={rankNav} pageSize={scope.top} />}
+            </>
           ) : (
             <p className="muted">
               Няма достатъчно данни за тази разбивка — индексът се преизчислява при всяко обновяване
@@ -555,34 +621,121 @@ export default function Quality({ loaderData }: Route.ComponentProps) {
             )
           }
         >
+          <Form
+            method="get"
+            className="flow-controls"
+            role="group"
+            aria-label="Филтри на договорите"
+            onChange={(e) => submit(e.currentTarget)}
+          >
+            {/* Preserve the non-form page state through a GET submit; cursor/page/contract are
+                intentionally dropped — a new filter starts at page 1 with the weakest scorecard. */}
+            {scope.grain !== 'authority' && (
+              <input type="hidden" name="grain" value={scope.grain} />
+            )}
+            {scope.sort !== 'score' && <input type="hidden" name="sort" value={scope.sort} />}
+            {scope.contractSort !== 'score' && (
+              <input type="hidden" name="csort" value={scope.contractSort} />
+            )}
+            {scope.sel && <input type="hidden" name="sel" value={scope.sel} />}
+            {scope.rankPage > 1 && <input type="hidden" name="rpage" value={scope.rankPage} />}
+            <label>
+              Година:
+              <select name="year" defaultValue={scope.filters.year ?? ''}>
+                <option value="">Всички години</option>
+                {facets.years.map((y) => (
+                  <option key={y.value} value={y.value}>
+                    {y.value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Сектор:
+              <select name="sector" defaultValue={scope.filters.sector ?? ''}>
+                <option value="">Всички сектори</option>
+                {facets.sectors.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Финансиране:
+              <select name="funding" defaultValue={scope.filters.funding ?? ''}>
+                <option value="">Всякакво</option>
+                <option value="eu">Само с финансиране от ЕС</option>
+                <option value="national">Само без финансиране от ЕС</option>
+              </select>
+            </label>
+            <label>
+              Увереност:
+              <select name="conf" defaultValue={scope.filters.conf ?? ''}>
+                <option value="">Всяка увереност</option>
+                <option value="high">Високо · покритие ≥ 0,80</option>
+                <option value="medium">Средно · 0,60 – 0,79</option>
+                <option value="low">Ниско · 0,40 – 0,59</option>
+                <option value="none">Без оценка · value_suspect</option>
+              </select>
+            </label>
+            <noscript>
+              <button type="submit">Покажи</button>
+            </noscript>
+          </Form>
           <p className="q-sort standalone">
             Подреди:{' '}
             <Link
-              to={qs({ csort: null })}
+              to={withParams(sp, { csort: null, cursor: null, page: null }) || '/quality'}
               aria-current={scope.contractSort === 'score' ? 'true' : undefined}
             >
               индекс
             </Link>{' '}
             <Link
-              to={qs({ csort: 'value' })}
+              to={withParams(sp, { csort: 'value', cursor: null, page: null })}
               aria-current={scope.contractSort === 'value' ? 'true' : undefined}
             >
               стойност
             </Link>
+            {activeFilters && (
+              <>
+                {' · '}
+                <Link to={qs({ year: null, sector: null, funding: null, conf: null })}>
+                  изчисти филтрите ✕
+                </Link>
+              </>
+            )}
+          </p>
+          <p className="sr-only" role="status">
+            {navigating
+              ? 'Обновяване на списъка с договори…'
+              : `Намерени ${count(contractsTotal)} ${plural(contractsTotal, 'договор', 'договора')}.`}
           </p>
           {contracts.length ? (
-            <div className="q-contract-grid">
-              {contracts.map((c) => (
-                <ContractCard
-                  key={c.id}
-                  c={c}
-                  selected={scorecard?.id === c.id}
-                  href={`${qs({ contract: c.id })}#scorecard`}
-                />
-              ))}
-            </div>
+            <>
+              <div className="q-contract-grid">
+                {contracts.map((c) => (
+                  <ContractCard
+                    key={c.id}
+                    c={c}
+                    selected={scorecard?.id === c.id}
+                    href={`${withParams(sp, { contract: c.id })}#scorecard`}
+                  />
+                ))}
+              </div>
+              {contractNav.pageCount > 1 && (
+                <Pagination nav={contractNav} pageSize={scope.pageSize} />
+              )}
+            </>
           ) : (
-            <p className="muted">Няма оценени договори за избрания разрез.</p>
+            <p className="muted">
+              Няма оценени договори за избрания разрез.{' '}
+              {activeFilters && (
+                <Link to={qs({ year: null, sector: null, funding: null, conf: null })}>
+                  Изчисти филтрите
+                </Link>
+              )}
+            </p>
           )}
           <p className="small muted">
             Договорите с недостатъчни данни за стойността (value_suspect ·{' '}
@@ -630,10 +783,11 @@ const GRAIN_WEIGHTING: Record<QualityGrain, string> = {
 
 function rankColumns(
   grain: QualityGrain,
-  qs: (patch: Record<string, string | null>) => string,
+  qs: (patch: Record<string, string | number | null>) => string,
+  rankOffset: number,
 ): Column<QualityRankRow>[] {
   return [
-    { key: 'rank', header: '#', isRank: true, cell: (_r, i) => i + 1 },
+    { key: 'rank', header: '#', isRank: true, cell: (_r, i) => rankOffset + i + 1 },
     {
       key: 'name',
       header: GRAIN_TITLES[grain],

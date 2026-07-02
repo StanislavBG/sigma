@@ -8,7 +8,13 @@ import { normalizeAuthoritySort, normalizeCompanySort, normalizeContractSort } f
 import type { CpvCategory } from '@sigma/config';
 import type { FilterCategory, FilterGroup, FilterOption } from '../components/FilterRail';
 
-export const PAGE_SIZE = { contracts: 15, companies: 25, authorities: 25, network: 25 } as const;
+export const PAGE_SIZE = {
+  contracts: 15,
+  companies: 25,
+  authorities: 25,
+  network: 25,
+  quality: 12, // card grid — divides evenly into the 2- and 3-column layouts
+} as const;
 export const MAX_MULTI_VALUES = 50;
 
 const KNOWN_SECTORS = new Set(CPV_SECTORS.map((s) => s.code));
@@ -87,6 +93,39 @@ export function companyListFilters(sp: URLSearchParams) {
     years: getMulti(sp, 'year'),
     eu: (sp.get('eu') as 'eu' | 'national' | null) || null,
     q: sp.get('q'),
+  };
+}
+
+const QUALITY_CONF_TIERS = new Set(['high', 'medium', 'low', 'none']);
+
+export interface QualityListFilters {
+  year: string | null;
+  sector: string | null;
+  funding: 'eu' | 'national' | null;
+  conf: 'high' | 'medium' | 'low' | 'none' | null;
+  rankPage: number; // ?rpage — 1-based OFFSET page of the „Разбивка" rollup table
+}
+
+/**
+ * The /quality contracts-list facet set read from the URL — the single source of truth for the
+ * route loader (same drift-prevention rationale as contractListFilters; keep aligned with @sigma/db
+ * QUALITY_FILTER_KEYS). Every value is validated before it can reach a filter or the edge-cache key:
+ * a malformed ?year/?sector/?conf is dropped (it can't mint unbounded distinct cache keys nor poison
+ * the result set — CWE-349 bar). Pagination extras: `cursor`/`page` (contracts keyset, read
+ * route-side) and `rpage` (ranking OFFSET page, clamped here).
+ */
+export function qualityListFilters(sp: URLSearchParams): QualityListFilters {
+  const year = sp.get('year');
+  const sector = sp.get('sector');
+  const funding = sp.get('funding');
+  const conf = sp.get('conf');
+  const rpageRaw = Math.floor(Number(sp.get('rpage') ?? '1'));
+  return {
+    year: year && /^\d{4}$/.test(year) ? year : null,
+    sector: sector && KNOWN_SECTORS.has(sector) ? sector : null,
+    funding: funding === 'eu' || funding === 'national' ? funding : null,
+    conf: conf && QUALITY_CONF_TIERS.has(conf) ? (conf as QualityListFilters['conf']) : null,
+    rankPage: Number.isFinite(rpageRaw) ? Math.min(Math.max(1, rpageRaw), 500) : 1,
   };
 }
 
@@ -190,6 +229,7 @@ const PARAM_ORDER = [
   'procedure',
   'funding',
   'eu',
+  'conf',
   'value',
   'authority',
   'bidder',
@@ -198,6 +238,7 @@ const PARAM_ORDER = [
   'sort',
   'cursor',
   'page',
+  'rpage',
 ];
 
 /**

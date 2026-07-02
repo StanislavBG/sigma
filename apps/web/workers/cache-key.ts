@@ -9,6 +9,7 @@ export const CACHE_QUERY_PARAMS = new Set([
   'by', // /overruns — sort dimension (absolute | percent)
   'center',
   'cohort', // /price-anomaly — selected CPV cohorts (repeatable); faceting changes the result set
+  'conf', // /quality: confidence-tier facet on the contracts list — changes rows + totals (CWE-349)
   'contract', // /quality: scorecard subject
   'count',
   'cpv', // /contracts — exact 5-digit CPV filter; ALSO /trends: 5-digit CPV group lens filter
@@ -25,6 +26,7 @@ export const CACHE_QUERY_PARAMS = new Set([
   'page', // pagination offset — distinct pages must not share a cache entry
   'procedure',
   'q',
+  'rpage', // /quality: „Разбивка" ranking OFFSET page — distinct pages must not share a cache entry
   'sector',
   'sel', // /quality: selected ranking row scoping the contract list
   'sort',

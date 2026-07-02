@@ -8,6 +8,7 @@ import {
   leaderboardRankOffset,
   MAX_MULTI_VALUES,
   pageNav,
+  qualityListFilters,
 } from './filters';
 
 const sp = (q: string) => new URLSearchParams(q);
@@ -63,6 +64,57 @@ describe('companyListFilters', () => {
 
   it('normalises an unknown sort to the default rather than passing it through', () => {
     expect(companyListFilters(new URLSearchParams('sort=bogus')).sort).toBe('won');
+  });
+});
+
+describe('qualityListFilters', () => {
+  it('parses the /quality facet set the loader consumes', () => {
+    const f = qualityListFilters(sp('year=2024&sector=45&funding=eu&conf=high&rpage=3'));
+    expect(f).toEqual({
+      year: '2024',
+      sector: '45',
+      funding: 'eu',
+      conf: 'high',
+      rankPage: 3,
+    });
+  });
+
+  it('returns the empty set when no facet params are present', () => {
+    expect(qualityListFilters(sp(''))).toEqual({
+      year: null,
+      sector: null,
+      funding: null,
+      conf: null,
+      rankPage: 1,
+    });
+  });
+
+  it('drops a malformed ?year before it can reach a filter or the cache key (CWE-349)', () => {
+    expect(qualityListFilters(sp('year=24')).year).toBeNull();
+    expect(qualityListFilters(sp('year=2024x')).year).toBeNull();
+    expect(qualityListFilters(sp("year=20'4")).year).toBeNull();
+  });
+
+  it('drops an unknown ?sector (allow-list, same rule as the multi-value sector param)', () => {
+    expect(qualityListFilters(sp('sector=99')).sector).toBeNull();
+    expect(qualityListFilters(sp('sector=4')).sector).toBeNull();
+    const known = CPV_SECTORS[0]!.code;
+    expect(qualityListFilters(sp(`sector=${known}`)).sector).toBe(known);
+  });
+
+  it('collapses bogus ?funding and ?conf values to null instead of passing them through', () => {
+    expect(qualityListFilters(sp('funding=both')).funding).toBeNull();
+    expect(qualityListFilters(sp('conf=maximal')).conf).toBeNull();
+    expect(qualityListFilters(sp('funding=national&conf=none')).funding).toBe('national');
+    expect(qualityListFilters(sp('conf=none')).conf).toBe('none');
+  });
+
+  it('clamps ?rpage to an integer in [1, 500] for hostile or absent values', () => {
+    expect(qualityListFilters(sp('rpage=0')).rankPage).toBe(1);
+    expect(qualityListFilters(sp('rpage=-5')).rankPage).toBe(1);
+    expect(qualityListFilters(sp('rpage=abc')).rankPage).toBe(1);
+    expect(qualityListFilters(sp('rpage=2.9')).rankPage).toBe(2);
+    expect(qualityListFilters(sp('rpage=99999')).rankPage).toBe(500);
   });
 });
 

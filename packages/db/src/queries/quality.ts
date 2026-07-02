@@ -6,10 +6,12 @@
 // competition.ts): a low score is a weak-quality SIGNAL, not proof of wrongdoing.
 
 import type {
+  QualityContractFilters,
   QualityContractRow,
   QualityContractSort,
   QualityCoverageTier,
   QualityData,
+  QualityFacets,
   QualityGrain,
   QualityLeaves,
   QualityOverview,
@@ -21,7 +23,10 @@ import type {
 } from '@sigma/api-contract';
 import { CPV_SECTORS } from '@sigma/config';
 import { cleanName, entityName } from '@sigma/shared';
+import { assertCovers } from './filter-guard';
 import { authoritySlug, companySlug, contractSlug } from './identity';
+import { filterSignature, keyset, pageCursors } from './keyset';
+import { lookup } from './lookup';
 import { typeLabel } from './rows';
 
 export interface QualityParams {
@@ -31,11 +36,28 @@ export interface QualityParams {
   sel?: string | null; // selected ranking key → scopes the contracts list
   contractId?: string | null; // scorecard subject; defaults to the weakest listed contract
   top?: number;
+  rankPage?: number; // 1-based OFFSET page over the ranking rollup (small tables — OFFSET is fine)
+  filters?: Partial<QualityContractFilters>; // facet filters over the contracts list
+  cursor?: string | null; // contracts-list keyset cursor
+  pageSize?: number;
 }
+
+/**
+ * Facet-filter keys of the contracts list, mirroring CONTRACT_FILTER_KEYS in contracts.ts: the same
+ * key set feeds the keyset cursor's filter signature (a cursor never resumes under different filters).
+ */
+export const QUALITY_FILTER_KEYS = [
+  'year',
+  'sector',
+  'funding',
+  'conf',
+] as const satisfies readonly (keyof QualityContractFilters)[];
+assertCovers<QualityContractFilters, typeof QUALITY_FILTER_KEYS>();
 
 const DEFAULT_TOP = 20;
 const MAX_TOP = 50;
-const CONTRACT_LIMIT = 12;
+const CONTRACT_PAGE_SIZE = 12;
+const MAX_RANK_PAGE = 500; // safety clamp on the OFFSET pager (rollups are ≤ a few thousand rows)
 // Authority/supplier rows need a minimal scored sample before an average is meaningful (same
 // small-sample guard as competition's minContracts). Sector/region/year/funding are corpus-wide cuts.
 const MIN_SCORED = 20;
@@ -199,18 +221,31 @@ async function qualityRanking(
   sort: QualityRankSort,
   top: number,
   minScored: number,
-): Promise<QualityRankRow[]> {
+  rankPage: number,
+): Promise<{ rows: QualityRankRow[]; total: number }> {
   const order =
     sort === 'contracts'
       ? 'ORDER BY total_contracts DESC, avg_overall ASC, key'
       : // weakest first; ties break toward the larger sample (the more telling case)
         'ORDER BY avg_overall ASC, total_contracts DESC, key';
+  // Rollup tables are small (≤ a few thousand rows), so plain LIMIT/OFFSET paging is fine here —
+  // unlike the contracts list, which keysets. COUNT over the same rollup is equally cheap.
+  const total =
+    (
+      await db
+        .prepare(`SELECT COUNT(*) AS n FROM (${rankSql(grain)})`)
+        .bind(minScored)
+        .first<{ n: number }>()
+    )?.n ?? 0;
+  // Clamp the page into the real range so an out-of-range ?rpage shows the last page, not a void.
+  const pageCount = Math.max(1, Math.ceil(total / top));
+  const page = Math.min(Math.max(1, Math.floor(rankPage) || 1), pageCount);
   const { results } = await db
-    .prepare(`${rankSql(grain)} ${order} LIMIT ?2`)
-    .bind(minScored, top)
+    .prepare(`${rankSql(grain)} ${order} LIMIT ?2 OFFSET ?3`)
+    .bind(minScored, top, (page - 1) * top)
     .all<RankRow>();
   const sectorByCode = new Map(CPV_SECTORS.map((s) => [s.code, s.short ?? s.label]));
-  return results.map((r) => {
+  const rows = results.map((r) => {
     let href: string | null = null;
     let name = r.name ?? r.key;
     let sub = r.sub;
@@ -245,6 +280,7 @@ async function qualityRanking(
       coverageTier: coverageTier(r.mean_coverage),
     };
   });
+  return { rows, total };
 }
 
 // Contracts-list / scorecard scope: a selected ranking row narrows the list to its contracts. The
@@ -270,6 +306,36 @@ function contractScope(
         ? { where: 'AND c.eu_funded = 1', params: [] }
         : { where: 'AND (c.eu_funded IS NULL OR c.eu_funded = 0)', params: [] };
   }
+}
+
+// §6.2 confidence bands over (score_overall, score_coverage). 'none' = unrated: coverage-withheld
+// rows never reach this list, so within it score_overall IS NULL ⇔ value_suspect.
+const CONF_WHERE: Record<QualityCoverageTier, string> = lookup({
+  high: 'AND f.score_overall IS NOT NULL AND f.score_coverage >= 0.8',
+  medium: 'AND f.score_overall IS NOT NULL AND f.score_coverage >= 0.6 AND f.score_coverage < 0.8',
+  low: 'AND f.score_overall IS NOT NULL AND f.score_coverage < 0.6',
+  none: 'AND f.score_overall IS NULL',
+});
+
+/**
+ * Facet-filter WHERE fragments (each with a leading 'AND ') + params, composed AFTER the grain/sel
+ * scope. Keep consumed keys in sync with QUALITY_FILTER_KEYS and the cursor's filter signature.
+ */
+function contractFacetWhere(flt: QualityContractFilters): { where: string; params: unknown[] } {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (flt.year) {
+    where.push('AND substr(c.signed_at, 1, 4) = ?');
+    params.push(flt.year);
+  }
+  if (flt.sector) {
+    where.push('AND substr(t.cpv_code, 1, 2) = ?');
+    params.push(flt.sector);
+  }
+  if (flt.funding === 'eu') where.push('AND c.eu_funded = 1');
+  else if (flt.funding === 'national') where.push('AND (c.eu_funded IS NULL OR c.eu_funded = 0)');
+  if (flt.conf) where.push(CONF_WHERE[flt.conf]);
+  return { where: where.join(' '), params };
 }
 
 interface ContractRowRaw {
@@ -312,39 +378,144 @@ function mapContractRow(r: ContractRowRaw): QualityContractRow {
   };
 }
 
-const CONTRACT_SELECT = `
+const CONTRACT_COLS = `
   SELECT c.id, c.signed_at, t.cpv_code, t.authority_id, a.name AS authority_name,
          c.bidder_id, b.name AS bidder_name, b.kind AS bidder_kind, c.amount_eur,
          f.score_overall, f.score_a, f.score_b, f.score_c, f.score_d, f.score_e,
-         f.score_coverage, f.value_flag
+         f.score_coverage, f.value_flag`;
+const CONTRACT_FROM = `
   FROM contract_features f
   JOIN contracts c ON c.id = f.contract_id
   JOIN tenders t ON t.id = c.tender_id
   JOIN authorities a ON a.id = t.authority_id
   JOIN bidders b ON b.id = c.bidder_id`;
 
+// Keyset sort expressions (same scheme as listContracts). 'score' lists weakest first with unscored
+// value_suspect rows last — COALESCE(score, 2.0) sinks the NULLs past every real [0,1] score, so
+// exclusion stays visible, not silent. Coverage-withheld rows never reach this list at all.
+const CONTRACT_SORTS: Record<QualityContractSort, { expr: string; dir: 'asc' | 'desc' }> = lookup({
+  score: { expr: 'COALESCE(f.score_overall, 2.0)', dir: 'asc' },
+  value: { expr: 'COALESCE(c.amount_eur, -1)', dir: 'desc' },
+});
+
+// Everything the contracts list is scoped by. The keyset cursor is bound to this exact signature
+// (plus the sort expression), so a cursor minted under one filter set silently resets to page 1
+// under any other — it can never resume mid-way through a different result set.
+function qualityContractSignature(
+  grain: QualityGrain,
+  sel: string | null,
+  flt: QualityContractFilters,
+): string {
+  return filterSignature({
+    grain: sel ? grain : null, // grain only scopes the list through sel
+    sel,
+    year: flt.year,
+    sector: flt.sector,
+    funding: flt.funding,
+    conf: flt.conf,
+  } satisfies Record<(typeof QUALITY_FILTER_KEYS)[number] | 'grain' | 'sel', unknown>);
+}
+
+interface QualityContractsPage {
+  items: QualityContractRow[];
+  total: number;
+  nextCursor: string | null;
+  prevCursor: string | null;
+}
+
 async function qualityContracts(
   db: D1Database,
   grain: QualityGrain,
   sel: string | null,
   sort: QualityContractSort,
-): Promise<QualityContractRow[]> {
+  flt: QualityContractFilters,
+  cursor: string | null,
+  pageSize: number,
+): Promise<QualityContractsPage> {
   const scope = contractScope(grain, sel);
-  // Scored contracts lead (weakest first); unscored value_suspect rows are still listed — after the
-  // scored ones — so exclusion is visible, not silent. Coverage-withheld rows stay off this list.
-  const order =
-    sort === 'value'
-      ? 'ORDER BY c.amount_eur DESC, c.id'
-      : 'ORDER BY (f.score_overall IS NULL), f.score_overall ASC, c.amount_eur DESC, c.id';
-  const { results } = await db
-    .prepare(
-      `${CONTRACT_SELECT}
-       WHERE (f.score_overall IS NOT NULL OR f.value_flag = 'value_suspect') ${scope.where}
-       ${order} LIMIT ?`,
-    )
-    .bind(...scope.params, CONTRACT_LIMIT)
-    .all<ContractRowRaw>();
-  return results.map(mapContractRow);
+  const facet = contractFacetWhere(flt);
+  const s = CONTRACT_SORTS[sort];
+  const ks = keyset({
+    sortCol: s.expr,
+    idCol: 'c.id',
+    dir: s.dir,
+    cursor,
+    filterSignature: qualityContractSignature(grain, sel, flt),
+    allowedSortCols: Object.values(CONTRACT_SORTS).map((v) => v.expr),
+  });
+  const baseWhere = `(f.score_overall IS NOT NULL OR f.value_flag = 'value_suspect') ${scope.where} ${facet.where}`;
+  const [{ results }, countRow] = await Promise.all([
+    db
+      .prepare(
+        `${CONTRACT_COLS}, ${s.expr} AS sort_value ${CONTRACT_FROM}
+         WHERE ${baseWhere} ${ks.whereSql ? `AND ${ks.whereSql}` : ''}
+         ${ks.orderSql} LIMIT ?`,
+      )
+      .bind(...scope.params, ...facet.params, ...ks.params, pageSize + 1)
+      .all<ContractRowRaw & { sort_value: string | number }>(),
+    // The pager total rides the same joins/filters as the page query; the heavy authority/bidder
+    // name joins are irrelevant to COUNT and skipped.
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n
+         FROM contract_features f
+         JOIN contracts c ON c.id = f.contract_id
+         JOIN tenders t ON t.id = c.tender_id
+         WHERE ${baseWhere}`,
+      )
+      .bind(...scope.params, ...facet.params)
+      .first<{ n: number }>(),
+  ]);
+  const hasMore = results.length > pageSize;
+  let rows = results.slice(0, pageSize);
+  if (ks.reverse) rows = rows.reverse();
+  const cursors = pageCursors({
+    rows: rows.map((r) => ({ sortValue: r.sort_value, id: r.id })),
+    hasMore,
+    incomingCursor: cursor,
+    cursor: ks.cursor,
+    sortToken: ks.cursorToken,
+  });
+  return {
+    items: rows.map(mapContractRow),
+    total: countRow?.n ?? 0,
+    nextCursor: cursors.nextCursor,
+    prevCursor: cursors.prevCursor,
+  };
+}
+
+/**
+ * Facet option lists for the contracts-list filters. Sourced from the small *_quality_totals
+ * rollups the ETL already builds (a handful of rows each) — NEVER from scanning contract_features
+ * or contracts. Counts are the rollups' total_contracts (the corpus-wide cut, unscoped).
+ */
+async function qualityFacets(db: D1Database): Promise<QualityFacets> {
+  const [years, sectors, funding] = await Promise.all([
+    db
+      .prepare(
+        `SELECT year AS value, total_contracts AS count FROM year_quality_totals
+         WHERE year <> 'NA' ORDER BY year DESC`,
+      )
+      .all<{ value: string; count: number }>(),
+    db
+      .prepare(
+        `SELECT division AS value, total_contracts AS count FROM sector_quality_totals
+         WHERE division <> 'NA' ORDER BY division`,
+      )
+      .all<{ value: string; count: number }>(),
+    db
+      .prepare(`SELECT funding_key AS value, total_contracts AS count FROM funding_quality_totals`)
+      .all<{ value: 'eu' | 'national'; count: number }>(),
+  ]);
+  const sectorByCode = new Map(CPV_SECTORS.map((s) => [s.code, s.short ?? s.label]));
+  return {
+    years: years.results,
+    sectors: sectors.results.map((r) => ({
+      ...r,
+      label: `${r.value} · ${sectorByCode.get(r.value) ?? 'CPV дивизия'}`,
+    })),
+    funding: funding.results.filter((r) => r.value === 'eu' || r.value === 'national'),
+  };
 }
 
 interface ScorecardRowRaw extends ContractRowRaw {
@@ -469,26 +640,47 @@ export async function getQualityScorecard(
 
 const GRAINS: QualityGrain[] = ['authority', 'supplier', 'sector', 'region', 'year', 'funding'];
 
+const CONF_TIERS: QualityCoverageTier[] = ['high', 'medium', 'low', 'none'];
+
 export async function getQuality(db: D1Database, p: QualityParams = {}): Promise<QualityData> {
   const grain: QualityGrain = p.grain && GRAINS.includes(p.grain) ? p.grain : 'authority';
   const sort: QualityRankSort = p.sort === 'contracts' ? 'contracts' : 'score';
   const contractSort: QualityContractSort = p.contractSort === 'value' ? 'value' : 'score';
   const sel = p.sel ?? null;
   const top = p.top && p.top > 0 ? Math.min(Math.floor(p.top), MAX_TOP) : DEFAULT_TOP;
+  const rankPage =
+    p.rankPage && p.rankPage > 0 ? Math.min(Math.floor(p.rankPage), MAX_RANK_PAGE) : 1;
+  const pageSize =
+    p.pageSize && p.pageSize > 0 ? Math.min(Math.floor(p.pageSize), 50) : CONTRACT_PAGE_SIZE;
+  // Re-validate the facet filters at the query boundary (the web parser validates too, but this
+  // module must not trust its callers): a bogus value is dropped, never passed into SQL.
+  const flt: QualityContractFilters = {
+    year: p.filters?.year && /^\d{4}$/.test(p.filters.year) ? p.filters.year : null,
+    sector: p.filters?.sector && /^\d{2}$/.test(p.filters.sector) ? p.filters.sector : null,
+    funding:
+      p.filters?.funding === 'eu' || p.filters?.funding === 'national' ? p.filters.funding : null,
+    conf: p.filters?.conf && CONF_TIERS.includes(p.filters.conf) ? p.filters.conf : null,
+  };
   const minScored = grain === 'authority' || grain === 'supplier' ? MIN_SCORED : 1;
-  const [overview, ranking, contracts] = await Promise.all([
+  const [overview, ranking, contracts, facets] = await Promise.all([
     qualityOverview(db),
-    qualityRanking(db, grain, sort, top, minScored),
-    qualityContracts(db, grain, sel, contractSort),
+    qualityRanking(db, grain, sort, top, minScored, rankPage),
+    qualityContracts(db, grain, sel, contractSort, flt, p.cursor ?? null, pageSize),
+    qualityFacets(db),
   ]);
-  const scorecardId = p.contractId ?? contracts[0]?.id ?? null;
+  const scorecardId = p.contractId ?? contracts.items[0]?.id ?? null;
   const scorecard = scorecardId ? await getQualityScorecard(db, scorecardId) : null;
   return {
     overview,
-    ranking,
-    contracts,
+    ranking: ranking.rows,
+    rankingTotal: ranking.total,
+    contracts: contracts.items,
+    contractsTotal: contracts.total,
+    contractsNextCursor: contracts.nextCursor,
+    contractsPrevCursor: contracts.prevCursor,
+    facets,
     scorecard,
-    scope: { grain, sort, contractSort, sel, top, minScored },
+    scope: { grain, sort, contractSort, sel, filters: flt, top, rankPage, pageSize, minScored },
   };
 }
 

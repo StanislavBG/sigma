@@ -116,6 +116,21 @@ describe('cacheKey', () => {
     expect(cacheUrl('http://local/contracts/%').pathname).toBe('/contracts/%');
   });
 
+  it('keys the /quality facet + pager params so filtered views get their own entries (CWE-349)', () => {
+    // ?conf narrows the „Договори · оценки" list to a §6.2 confidence band; ?rpage pages the
+    // „Разбивка" rollup. Either collapsing onto the unfiltered entry would cross-serve wrong rows.
+    const base = cacheUrl('http://local/quality');
+    expect(cacheUrl('http://local/quality?conf=high').search).not.toBe(base.search);
+    expect(cacheUrl('http://local/quality?rpage=2').search).not.toBe(base.search);
+    expect(cacheUrl('http://local/quality?conf=high').search).not.toBe(
+      cacheUrl('http://local/quality?conf=none').search,
+    );
+    // The reused facet params (year/sector/funding) and the contracts cursor stay keyed too.
+    expect(
+      cacheUrl('http://local/quality?year=2024&sector=45&funding=eu&cursor=c1').search,
+    ).not.toBe(base.search);
+  });
+
   it('keys response-affecting params so they cannot collapse to one cache entry (CWE-349, #56)', () => {
     // ?bids=1 narrows /contracts to single-bid contracts — different rows and totals.
     expect(cacheUrl('http://local/contracts?bids=1').search).not.toBe(

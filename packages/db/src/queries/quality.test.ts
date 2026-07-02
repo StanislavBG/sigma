@@ -343,6 +343,168 @@ describe('getQuality — contracts list & scoping', () => {
   });
 });
 
+describe('getQuality — facet options', () => {
+  it('sources every facet option list from the small rollup tables (never a corpus scan)', async () => {
+    const { facets } = await getQuality(d1, {});
+    // year_quality_totals, newest first, NA dropped
+    expect(facets.years).toEqual([
+      { value: '2025', count: 100 },
+      { value: '2024', count: 90 },
+    ]);
+    // sector_quality_totals with CPV labels, NA dropped
+    expect(facets.sectors.map((s) => s.value)).toEqual(['33', '45']);
+    expect(facets.sectors[0]!.label.startsWith('33 · ')).toBe(true);
+    expect(facets.sectors.map((s) => s.count)).toEqual([90, 100]);
+    // funding_quality_totals
+    expect(facets.funding).toEqual([
+      { value: 'eu', count: 44164 },
+      { value: 'national', count: 150320 },
+    ]);
+  });
+});
+
+describe('getQuality — contract facet filters', () => {
+  it('year filter narrows the list to contracts signed that year', async () => {
+    const y2024 = await getQuality(d1, { filters: { year: '2024' } });
+    expect(y2024.contracts.map((c) => c.id)).toEqual(['c:1', 'c:4', 'c:3']);
+    expect(y2024.contractsTotal).toBe(3);
+
+    const y2025 = await getQuality(d1, { filters: { year: '2025' } });
+    expect(y2025.contracts.map((c) => c.id)).toEqual(['c:2']);
+    expect(y2025.contractsTotal).toBe(1);
+  });
+
+  it('sector filter narrows to the CPV division', async () => {
+    const s45 = await getQuality(d1, { filters: { sector: '45' } });
+    expect(s45.contracts.map((c) => c.id)).toEqual(['c:1', 'c:3']);
+
+    const s33 = await getQuality(d1, { filters: { sector: '33' } });
+    expect(s33.contracts.map((c) => c.id)).toEqual(['c:4', 'c:2']);
+  });
+
+  it('funding filter splits eu vs national (NULL eu_funded counts as national)', async () => {
+    const eu = await getQuality(d1, { filters: { funding: 'eu' } });
+    expect(eu.contracts.map((c) => c.id)).toEqual(['c:4']);
+
+    const national = await getQuality(d1, { filters: { funding: 'national' } });
+    expect(national.contracts.map((c) => c.id)).toEqual(['c:1', 'c:2', 'c:3']);
+  });
+
+  it('confidence filter maps the §6.2 coverage bands; none = unrated, never zero', async () => {
+    const byTier = async (conf: 'high' | 'medium' | 'low' | 'none') =>
+      (await getQuality(d1, { filters: { conf } })).contracts.map((c) => c.id);
+    expect(await byTier('high')).toEqual(['c:2']); // coverage .85
+    expect(await byTier('medium')).toEqual(['c:1']); // coverage .78
+    expect(await byTier('low')).toEqual(['c:4']); // coverage .50
+    expect(await byTier('none')).toEqual(['c:3']); // score_overall IS NULL (value_suspect)
+  });
+
+  it('filters compose with each other (AND) and with the sel scope', async () => {
+    const combo = await getQuality(d1, {
+      filters: { year: '2024', sector: '45', conf: 'medium' },
+    });
+    expect(combo.contracts.map((c) => c.id)).toEqual(['c:1']);
+    expect(combo.contractsTotal).toBe(1);
+
+    // sel (authority Б → c:2, c:4) ∧ funding=eu → only c:4
+    const scoped = await getQuality(d1, {
+      grain: 'authority',
+      sel: 'auth:100000002',
+      filters: { funding: 'eu' },
+    });
+    expect(scoped.contracts.map((c) => c.id)).toEqual(['c:4']);
+
+    // A disjoint composition yields the honest empty set (never a fallback to unfiltered rows).
+    const empty = await getQuality(d1, { filters: { year: '2025', funding: 'eu' } });
+    expect(empty.contracts).toEqual([]);
+    expect(empty.contractsTotal).toBe(0);
+  });
+
+  it('drops malformed filter values at the query boundary instead of passing them into SQL', async () => {
+    const { contracts, scope } = await getQuality(d1, {
+      filters: {
+        year: "20'4; DROP TABLE contracts;",
+        sector: '4',
+        funding: 'both' as never,
+        conf: 'maximal' as never,
+      },
+    });
+    expect(scope.filters).toEqual({ year: null, sector: null, funding: null, conf: null });
+    expect(contracts).toHaveLength(4); // unfiltered — the bogus values never reached a WHERE
+  });
+});
+
+describe('getQuality — contracts keyset pagination', () => {
+  it('pages weakest-first with Prev/Next cursors and a stable total', async () => {
+    const p1 = await getQuality(d1, { pageSize: 2 });
+    expect(p1.contracts.map((c) => c.id)).toEqual(['c:1', 'c:4']);
+    expect(p1.contractsTotal).toBe(4);
+    expect(p1.contractsNextCursor).not.toBeNull();
+    expect(p1.contractsPrevCursor).toBeNull();
+
+    const p2 = await getQuality(d1, { pageSize: 2, cursor: p1.contractsNextCursor });
+    expect(p2.contracts.map((c) => c.id)).toEqual(['c:2', 'c:3']);
+    expect(p2.contractsNextCursor).toBeNull();
+    expect(p2.contractsPrevCursor).not.toBeNull();
+
+    // Walking back restores page 1 in display order.
+    const back = await getQuality(d1, { pageSize: 2, cursor: p2.contractsPrevCursor });
+    expect(back.contracts.map((c) => c.id)).toEqual(['c:1', 'c:4']);
+  });
+
+  it('binds the cursor to the filter signature — replay under other filters resets to page 1', async () => {
+    const p1 = await getQuality(d1, { pageSize: 2 });
+    const replay = await getQuality(d1, {
+      pageSize: 2,
+      cursor: p1.contractsNextCursor,
+      filters: { year: '2024' },
+    });
+    // The unfiltered cursor is rejected (signature mismatch) → first page of the filtered set.
+    expect(replay.contracts.map((c) => c.id)).toEqual(['c:1', 'c:4']);
+    expect(replay.contractsPrevCursor).toBeNull();
+
+    // Same for the sel scope: a cursor minted corpus-wide cannot resume inside a selection.
+    const scoped = await getQuality(d1, {
+      pageSize: 2,
+      cursor: p1.contractsNextCursor,
+      grain: 'authority',
+      sel: 'auth:100000001',
+    });
+    expect(scoped.contracts.map((c) => c.id)).toEqual(['c:1', 'c:3']);
+  });
+
+  it('pages the value sort independently (its cursors do not resume under score sort)', async () => {
+    const p1 = await getQuality(d1, { contractSort: 'value', pageSize: 2 });
+    expect(p1.contracts.map((c) => c.id)).toEqual(['c:2', 'c:4']);
+
+    const crossed = await getQuality(d1, { pageSize: 2, cursor: p1.contractsNextCursor });
+    expect(crossed.contracts.map((c) => c.id)).toEqual(['c:1', 'c:4']); // score page 1, not value page 2
+  });
+});
+
+describe('getQuality — ranking pagination', () => {
+  it('pages the rollup with LIMIT/OFFSET and reports the total', async () => {
+    const p1 = await getQuality(d1, { grain: 'authority', top: 1 });
+    expect(p1.ranking.map((r) => r.key)).toEqual(['auth:100000001']);
+    expect(p1.rankingTotal).toBe(2);
+
+    const p2 = await getQuality(d1, { grain: 'authority', top: 1, rankPage: 2 });
+    expect(p2.ranking.map((r) => r.key)).toEqual(['auth:100000002']);
+    expect(p2.rankingTotal).toBe(2);
+  });
+
+  it('keeps the sort toggle working across pages', async () => {
+    const p2 = await getQuality(d1, { grain: 'authority', top: 1, rankPage: 2, sort: 'contracts' });
+    // contracts sort reverses the fixture order, so page 2 is the smaller authority.
+    expect(p2.ranking.map((r) => r.key)).toEqual(['auth:100000001']);
+  });
+
+  it('clamps an out-of-range page to the last real page, not a void', async () => {
+    const far = await getQuality(d1, { grain: 'authority', top: 1, rankPage: 99 });
+    expect(far.ranking.map((r) => r.key)).toEqual(['auth:100000002']);
+  });
+});
+
 describe('getQualityScorecard', () => {
   it('reproduces the ETL blend and maps the raw leaves', async () => {
     const card = await getQualityScorecard(d1, 'c:1');

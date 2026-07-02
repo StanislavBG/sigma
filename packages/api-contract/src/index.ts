@@ -705,17 +705,40 @@ export interface QualityScorecard extends QualityContractRow {
   coverageFlags: { bids: boolean; sme: boolean; estimate: boolean; overrun: boolean };
 }
 
+/** Facet filters over the contracts list („Договори · оценки") — single-select, composable with `sel`. */
+export interface QualityContractFilters {
+  year: string | null; // substr(signed_at, 1, 4)
+  sector: string | null; // CPV division (2 digits)
+  funding: 'eu' | 'national' | null;
+  conf: QualityCoverageTier | null; // §6.2 coverage band; 'none' = unrated (score_overall IS NULL)
+}
+
+/** Facet option lists sourced from the small *_quality_totals rollups (never a corpus scan). */
+export interface QualityFacets {
+  years: { value: string; count: number }[];
+  sectors: { value: string; label: string; count: number }[];
+  funding: { value: 'eu' | 'national'; count: number }[];
+}
+
 export interface QualityData {
   overview: QualityOverview;
   ranking: QualityRankRow[];
+  rankingTotal: number; // rollup rows passing the grain's floor — drives the „Разбивка" pager
   contracts: QualityContractRow[];
+  contractsTotal: number; // rows matching the current scope + facet filters
+  contractsNextCursor: string | null; // keyset cursors for the contracts list
+  contractsPrevCursor: string | null;
+  facets: QualityFacets;
   scorecard: QualityScorecard | null;
   scope: {
     grain: QualityGrain;
     sort: QualityRankSort;
     contractSort: QualityContractSort;
     sel: string | null; // selected ranking key filtering the contracts list
+    filters: QualityContractFilters;
     top: number;
+    rankPage: number; // 1-based OFFSET page over the ranking rollup (rollups are small)
+    pageSize: number; // contracts-list keyset page size
     minScored: number; // floor applied to authority/supplier rankings (small-sample noise)
   };
 }
