@@ -8,7 +8,7 @@ export const CACHE_QUERY_PARAMS = new Set([
   'bids', // /contracts: c.bids_received = 1 — changes the result set and headline totals (CWE-349, #56)
   'by', // /overruns — sort dimension (absolute | percent)
   'center',
-  'cohort', // /price-anomaly — selected CPV cohorts (repeatable); faceting changes the result set
+  'cohort', // /price-anomaly (301 → /trends?angle=cpv) — legacy selected cohorts (repeatable); mapped into ?cpv, so the redirect target varies by it
   'conf', // /quality: confidence-tier facet on the contracts list — changes rows + totals (CWE-349)
   'contract', // /quality: scorecard subject
   'count',
