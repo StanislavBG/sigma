@@ -9,6 +9,7 @@ const FILTER_VALUE: Record<string, unknown> = {
   bidder: '103267194',
   bids: 'one',
   countBucket: '2-5',
+  cpv: '45233',
   eu: 'eu',
   kinds: ['company'],
   procedureGroups: ['open'],
@@ -69,6 +70,7 @@ describe('route filter signatures', () => {
     expect([...CONTRACT_FILTER_KEYS]).toEqual([
       'years',
       'sectors',
+      'cpv',
       'procedureGroups',
       'valueBucket',
       'eu',
