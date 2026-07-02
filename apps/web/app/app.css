@@ -7510,6 +7510,64 @@ tbody td,
   font: 500 12px/1.6 var(--font-mono);
   color: var(--text-muted);
 }
+.q-sc-contrib {
+  margin: var(--s-3) 0;
+}
+.q-sc-contrib-cap {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  font: 600 9px/1 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.q-sc-contrib-cap span:last-child {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.q-sc-contrib-bars {
+  display: flex;
+  gap: var(--s-1);
+  margin-top: var(--s-2);
+}
+.q-sc-contrib-col {
+  flex-basis: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.q-sc-contrib-col > b {
+  font: 600 11px/1 var(--font-mono);
+}
+.q-sc-contrib-track {
+  display: block;
+  block-size: 52px;
+  position: relative;
+  background: var(--paper-deep);
+  overflow: hidden;
+}
+.q-sc-contrib-track i {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  display: block;
+  background: currentColor;
+}
+.q-sc-contrib-key {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font: 400 9px/1 var(--font-mono);
+  color: var(--ink-soft);
+}
+.q-sc-contrib-key b {
+  font-weight: 600;
+  color: var(--text);
+}
 .q-sc-pillars {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

@@ -163,6 +163,12 @@ function score100(s: number | null | undefined): string {
   return s == null ? '—' : String(Math.round(s * 100));
 }
 
+/** Weighted contribution (w×s) on the 0–100 scale, ≤1 decimal, decimal comma (e.g. „6,6", „15"). */
+function contrib1(w: number, s: number): string {
+  const v = Math.round(w * s * 1000) / 10;
+  return (Number.isInteger(v) ? String(v) : v.toFixed(1)).replace('.', ',');
+}
+
 function band(s: number | null | undefined): 'good' | 'mid' | 'weak' | 'unknown' {
   if (s == null) return 'unknown';
   if (s >= 0.7) return 'good';
@@ -851,6 +857,36 @@ function Scorecard({ card }: { card: QualityScorecard }) {
             {score100(card.worst)} ={' '}
             <b className={`q-${band(card.overall)}`}>{score100(card.overall)}</b>
           </p>
+
+          <div className="q-sc-contrib">
+            <p className="q-sc-contrib-cap">
+              <span>Принос към претеглената средна</span>
+              <span>широчина = тегло · височина = резултат</span>
+            </p>
+            <div className="q-sc-contrib-bars">
+              {PILLAR_META.map((p) => {
+                const s = card.pillars[p.key];
+                const w = card.effectiveWeights[p.key];
+                if (w == null || s == null) return null;
+                return (
+                  <div
+                    key={p.key}
+                    className="q-sc-contrib-col"
+                    style={{ flexGrow: Math.round(w * 100) }}
+                  >
+                    <b className={`q-${band(s)}`}>{contrib1(w, s)}</b>
+                    <span className={`q-sc-contrib-track q-${band(s)}`} aria-hidden="true">
+                      <i style={{ height: `${Math.min(100, s * 100).toFixed(1)}%` }} />
+                    </span>
+                    <span className="q-sc-contrib-key">
+                      <b>{p.letter}</b>
+                      <span>{Math.round(w * 100)}%</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="q-sc-pillars">
             {PILLAR_META.map((p) => {
