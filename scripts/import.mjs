@@ -12,6 +12,19 @@ import {
   refreshSliceStatementGroups,
 } from '../packages/ingest/src/refresh.ts';
 import { assertIntegrity } from './integrity-checks.mjs';
+import { buildAnomalyReport, formatAnomalyReport } from './anomaly-report.mjs';
+
+// Per-refresh anomaly report (#100): cross-row outliers the per-row value_flag can't see. OBSERVES
+// only — wrapped so a detector bug or an odd corpus can never fail the import (contrast assertIntegrity,
+// the hard gate). Prints the human-readable summary into the import log.
+function reportAnomalies(runner, label) {
+  try {
+    const report = buildAnomalyReport(runner);
+    console.log(`\n[${label}] ${formatAnomalyReport(report)}\n`);
+  } catch (err) {
+    console.warn(`[${label}] anomaly report skipped: ${err?.message ?? err}`);
+  }
+}
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const apiDir = resolve(root, 'apps/web');
@@ -222,6 +235,7 @@ function runFullDerive() {
   // the on-disk sqlite file; the remote path ships rollups via the work-DB route (ship-domain.mjs).
   if (!remote) run('node', ['scripts/precompute-price-anomaly.mjs']);
   assertIntegrity(d1, { label: 'full derive (D1)' });
+  reportAnomalies(d1, 'full derive (D1)');
 }
 
 function runSliceDerive() {
@@ -231,6 +245,7 @@ function runSliceDerive() {
   execSql(resolve(root, 'scripts/seed-state-owned.sql'));
   runRefreshSliceBatches();
   assertIntegrity(d1, { label: 'slice derive (D1)' });
+  reportAnomalies(d1, 'slice derive (D1)');
 }
 
 function runRefreshSliceBatches() {
