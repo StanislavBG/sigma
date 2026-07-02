@@ -292,6 +292,19 @@ function OverrunScatter({
         const isSel = p.id === selectedId;
         return (
           <g key={p.id}>
+            {/* transparent touch target UNDER the visible bubble: widens the tap area to a
+                ~44-unit diameter (mobile audit — small bubbles were untappable on touch) without
+                covering the bubble's own hover cue/title for mouse users. */}
+            <circle
+              cx={p.x}
+              cy={p.y}
+              r={Math.max(p.r, 22)}
+              fill="transparent"
+              style={{ cursor: 'pointer' }}
+              onClick={() => onSelect(p.rank - 1)}
+            >
+              <title>{`#${p.rank} · ${rows[p.rank - 1]?.subject ?? ''}`}</title>
+            </circle>
             {isSel && (
               <circle cx={p.x} cy={p.y} r={p.r + 4} fill="none" stroke={ACCENT} strokeWidth={1.5} />
             )}
@@ -562,45 +575,49 @@ function SectorSection({ rows }: { rows: OverrunSectorRow[] }) {
             </li>
           ))}
         </ul>
-        <table className="ov-sector-table">
-          <caption className="sr-only">
-            Раздуване по сектори (CPV): код, сектор, общ растеж (сума раздуване / сума при
-            сключване) и обща сума под риск.
-          </caption>
-          <thead>
-            <tr>
-              <th>CPV</th>
-              <th>Сектор</th>
-              <th>Растеж</th>
-              <th>€ риск</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((s) => (
-              <tr key={s.code}>
-                <td className="ov-sector-code">{s.code || '—'}</td>
-                <td className="ov-sector-name">
-                  <span
-                    aria-hidden="true"
-                    className={`ov-sector-dot ${s.bucket}`}
-                    title={BUCKET_LABEL[s.bucket]}
-                  />
-                  <span className="clamp1">{s.label}</span>
-                </td>
-                <td
-                  className={
-                    s.code === topGrowthCode && rows.length > 1
-                      ? 'ov-sector-growth is-top'
-                      : 'ov-sector-growth'
-                  }
-                >
-                  {signedPct(s.growth)}
-                </td>
-                <td className="ov-sector-risk">{moneyBare(s.riskEur)}</td>
+        {/* scroll wrapper so the four-column table can never force page-level horizontal overflow
+            on phones (mobile audit) — same treatment as the institutions table below. */}
+        <div className="ov-table-scroll">
+          <table className="ov-sector-table">
+            <caption className="sr-only">
+              Раздуване по сектори (CPV): код, сектор, общ растеж (сума раздуване / сума при
+              сключване) и обща сума под риск.
+            </caption>
+            <thead>
+              <tr>
+                <th>CPV</th>
+                <th>Сектор</th>
+                <th>Растеж</th>
+                <th>€ риск</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((s) => (
+                <tr key={s.code}>
+                  <td className="ov-sector-code">{s.code || '—'}</td>
+                  <td className="ov-sector-name">
+                    <span
+                      aria-hidden="true"
+                      className={`ov-sector-dot ${s.bucket}`}
+                      title={BUCKET_LABEL[s.bucket]}
+                    />
+                    <span className="clamp1">{s.label}</span>
+                  </td>
+                  <td
+                    className={
+                      s.code === topGrowthCode && rows.length > 1
+                        ? 'ov-sector-growth is-top'
+                        : 'ov-sector-growth'
+                    }
+                  >
+                    {signedPct(s.growth)}
+                  </td>
+                  <td className="ov-sector-risk">{moneyBare(s.riskEur)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   );

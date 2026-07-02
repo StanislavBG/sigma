@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { Form, Link, useNavigate, useSearchParams } from 'react-router';
 import { count as fmtCount } from '@sigma/shared';
@@ -48,6 +49,19 @@ export function FilterRail({
 }) {
   const [sp] = useSearchParams();
   const navigate = useNavigate();
+  const railRef = useRef<HTMLElement>(null);
+
+  // On phones the rail opens as a tall sheet; start every group collapsed there (mobile audit) so
+  // the visitor sees the group labels first. Groups with an active selection stay open. Desktop
+  // keeps the server-rendered expanded state; runs once after hydration (no-JS keeps all open).
+  useEffect(() => {
+    if (!window.matchMedia('(max-width: 960px)').matches) return;
+    railRef.current
+      ?.querySelectorAll<HTMLDetailsElement>('details.filter-group')
+      .forEach((group) => {
+        if (!group.querySelector('input:checked:not([value=""])')) group.open = false;
+      });
+  }, []);
   const preservedScope = ['authority', 'bidder'].flatMap((key) =>
     sp.getAll(key).map((value) => ({ key, value })),
   );
@@ -82,7 +96,7 @@ export function FilterRail({
     if (form) submitForm(form);
   };
   return (
-    <aside className="filter-rail" aria-label="Филтри">
+    <aside className="filter-rail" aria-label="Филтри" ref={railRef}>
       {/* The rail is always visible on desktop. When the layout stacks to one column it collapses
           behind the „Филтри" label, toggled by an off-screen checkbox — a CSS-only disclosure
           (see app.css), so it needs no JS and renders identically on the server and the client. */}

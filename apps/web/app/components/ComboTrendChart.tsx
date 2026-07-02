@@ -67,7 +67,7 @@ export function ComboTrendChart({
   const hp = hover != null ? points[hover] : null;
 
   return (
-    <div className="combo-chart" onMouseLeave={() => interactive && setHover(null)}>
+    <div className="combo-chart" onPointerLeave={() => interactive && setHover(null)}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
@@ -94,7 +94,8 @@ export function ComboTrendChart({
             y={yC(p.contracts).toFixed(1)}
             width={bw.toFixed(1)}
             height={(BOT - yC(p.contracts)).toFixed(1)}
-            onMouseEnter={interactive ? () => setHover(i) : undefined}
+            // pointerenter (not mouseenter) so a tap reveals the tooltip on touch screens too
+            onPointerEnter={interactive ? () => setHover(i) : undefined}
           />
         ))}
         <path className="combo-line" d={line} vectorEffect="non-scaling-stroke" />
@@ -131,7 +132,8 @@ export function ComboTrendChart({
           className="combo-tip"
           role="status"
           style={{
-            left: `${((x(hover) / W) * 100).toFixed(1)}%`,
+            // clamp so the centred tooltip never overflows the panel/viewport at the plot's edges
+            left: `clamp(84px, ${((x(hover) / W) * 100).toFixed(1)}%, calc(100% - 84px))`,
             top: (yV(hp.valueEur) / H) * cssHeight - 4,
           }}
         >

@@ -68,7 +68,7 @@ export function Choropleth({
         aria-label={`Карта на България: разходи за обществени поръчки по ${
           group === 'region' ? 'райони' : 'области'
         }`}
-        onMouseLeave={() => setHovered(null)}
+        onPointerLeave={() => setHovered(null)}
       >
         {BG_MAP.regions.map((shape) => {
           const r = byNuts3.get(shape.nuts3);
@@ -86,7 +86,7 @@ export function Choropleth({
               style={{
                 fill: TIER_FILL[tierForShape(r, group, macroByNuts2, tierOblast, tierRegion)],
               }}
-              onMouseEnter={() => setHovered(r ? shape.nuts3 : null)}
+              onPointerEnter={() => setHovered(r ? shape.nuts3 : null)}
             >
               <title>{label}</title>
             </path>
