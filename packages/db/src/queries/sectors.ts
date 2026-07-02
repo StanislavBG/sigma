@@ -13,8 +13,8 @@ export function sectorRef(division: string | null | undefined): SectorRef | null
 
 const SECTOR_OPTION_LIMIT = 12;
 
-/** Sector-select dropdown options: the most-active divisions by spend (from sector_totals), resolved
- *  to SectorRef with the short label. Shared by the /flows, /map, /trends and /competition loaders. */
+// Sector select options: the present sectors by value (curated short label), capped. Shared by
+// /flows, /map, /trends, /competition so every sector filter offers the same options from one query.
 export async function sectorOptions(db: D1Database): Promise<SectorRef[]> {
   const { results } = await db
     .prepare(`SELECT division FROM sector_totals ORDER BY value_eur DESC LIMIT ?`)
