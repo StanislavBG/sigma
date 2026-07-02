@@ -308,6 +308,46 @@ export async function getCohortLabel(db: D1Database, code: string): Promise<stri
   return row?.label ?? null;
 }
 
+export interface CohortMedianRow {
+  /** 5-digit CPV cohort code. */
+  code: string;
+  /** Human label — the cohort's modal cpv_description. */
+  label: string;
+  /** Priced peers in the cohort (≥ MIN_COHORT_SIZE by construction). */
+  n: number;
+  /** The cohort's typical TOTAL contract value, exp(median(ln v)). */
+  medianEur: number;
+}
+
+/**
+ * Median baselines („спрямо типичното") for arbitrary 5-digit CPV codes — ONE bounded IN-list read of
+ * cpv_cohort_stats (PK lookups; no sample join, no live median recompute). Codes without a stored
+ * cohort (fewer than MIN_COHORT_SIZE priced contracts) are simply absent from the result, so the
+ * caller renders no baseline rather than a fabricated one.
+ */
+export async function getCohortMedians(
+  db: D1Database,
+  codes: string[],
+): Promise<CohortMedianRow[]> {
+  const unique = [...new Set(codes)].filter((c) => /^\d{5}$/.test(c));
+  if (!unique.length) return [];
+  const res = await db
+    .prepare(
+      `SELECT code, label, n, median_eur
+       FROM cpv_cohort_stats
+       WHERE code IN (${unique.map(() => '?').join(', ')})
+       ORDER BY code`,
+    )
+    .bind(...unique)
+    .all<{ code: string; label: string; n: number; median_eur: number }>();
+  return res.results.map((r) => ({
+    code: r.code,
+    label: r.label,
+    n: r.n,
+    medianEur: r.median_eur,
+  }));
+}
+
 /**
  * Corpus KPIs for the page header: the analysable-cohort count + the total flagged contracts, plus the
  * methodology thresholds. ONE query, two scalar subqueries over the small rollups → one round trip.

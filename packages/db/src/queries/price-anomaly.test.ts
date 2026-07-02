@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getCohortLabel,
+  getCohortMedians,
   getCohortOutliers,
   getCohortStats,
   getPriceAnomalyKpis,
@@ -253,5 +254,38 @@ describe('getPriceAnomalyKpis', () => {
     const kpis = await getPriceAnomalyKpis(db);
     expect(kpis.cohortCount).toBe(0);
     expect(kpis.flaggedCount).toBe(0);
+  });
+});
+
+describe('getCohortMedians', () => {
+  it('reads the badge baselines from the rollup via ONE IN-list query (no live median)', async () => {
+    const { db, sql, bound } = fakeDb({
+      stats: [
+        statRaw({ code: '15000', label: 'Храни', n: 210, median_eur: 4200 }),
+        statRaw({ code: '45000' }),
+      ],
+    });
+    const rows = await getCohortMedians(db, ['45000', '15000', '45000']); // duplicate collapses
+    expect(sql).toHaveLength(1);
+    expect(sql[0]).toContain('FROM cpv_cohort_stats');
+    expect(sql[0]).not.toMatch(/contracts|tenders|ROW_NUMBER/); // rollup-sourced, never a corpus scan
+    expect(bound[0]).toEqual(['45000', '15000']);
+    expect(rows).toEqual([
+      { code: '15000', label: 'Храни', n: 210, medianEur: 4200 },
+      { code: '45000', label: 'Строителни и монтажни работи', n: 1200, medianEur: 96185 },
+    ]);
+  });
+
+  it('drops malformed codes and issues no query when nothing valid remains', async () => {
+    const { db, sql } = fakeDb({ stats: [] });
+    const rows = await getCohortMedians(db, ['4500', 'abcde', "45000' OR 1=1 --", '']);
+    expect(rows).toEqual([]);
+    expect(sql).toHaveLength(0); // nothing valid ⇒ no round trip
+  });
+
+  it('omits codes without a stored cohort instead of fabricating a baseline', async () => {
+    const { db } = fakeDb({ stats: [statRaw({ code: '45000' })] });
+    const rows = await getCohortMedians(db, ['45000', '99999']);
+    expect(rows.map((r) => r.code)).toEqual(['45000']); // 99999 absent — honest, not invented
   });
 });

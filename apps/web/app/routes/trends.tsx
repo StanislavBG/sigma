@@ -1,11 +1,11 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Form, Link, useNavigation, useSearchParams, useSubmit } from 'react-router';
-import type { CpvGroupStat } from '@sigma/api-contract';
 import { count, date, money, pct, plural, signedPct } from '@sigma/shared';
 import { CPV_SECTORS } from '@sigma/config';
 import {
-  getCpvGroupMedians,
-  getCpvGroupStats,
+  getCohortMedians,
+  getCohortStats,
+  getPriceAnomalyKpis,
   getSpendingTrend,
   listContracts,
   listOverviewContracts,
@@ -28,6 +28,16 @@ import {
   shortMonthLabel,
   type Step,
 } from '../lib/trends-series';
+import {
+  axisLabel,
+  type CpvLensGroup,
+  jitter,
+  LOG_MIN,
+  logMax,
+  makeLx,
+  relLabel,
+  toLensGroup,
+} from '../lib/obzor-cpv';
 
 export function meta(_: Route.MetaArgs) {
   return [
@@ -67,7 +77,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     // hostile input can neither poison the SQL scope nor mint unbounded cache-key variants (CWE-349).
     const cpvSel = cpvGroupSelection(sp);
 
-    const [trend, stats, contracts] = await Promise.all([
+    const [trend, cohorts, contracts, kpis] = await Promise.all([
       // Compact quarterly picker for the cross lens / year cards; the lenses render no dashboard, so
       // sectors and the seasonality/movers insights are skipped.
       // Faceted by the selected CPV groups (one aggregate scan; all groups when nothing is
@@ -77,18 +87,25 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         { granularity: 'quarter', cpvGroups: cpvSel },
         { includeSectors: false, includeInsights: false },
       ),
-      getCpvGroupStats(db, 10),
+      // The lens table is the merged home of /price-anomaly: rows come from the SAME precomputed
+      // CPV-cohort rollups (cpv_cohort_stats + cpv_cohort_sample) — median, sample points and outlier
+      // counts are read, never recomputed live (D1-cheap; 2 bounded statements).
+      getCohortStats(db, { sort: 'n', limit: 10 }),
       listOverviewContracts(db, { year, cpvGroups: cpvSel, sort, limit: 24 }),
+      // Corpus totals + methodology thresholds (log-MAD z ≥ 3, min cohort 30) for the header ⓘ.
+      getPriceAnomalyKpis(db),
     ]);
+    const groups = cohorts.map(toLensGroup);
 
-    // „Спрямо типичното" baselines for card groups outside the top-N stats (bounded: distinct groups
-    // on one card page, plus the selected group so its filter chip can carry a name).
-    const known = new Set(stats.groups.map((g) => g.group));
+    // „Спрямо типичното" baselines for card groups outside the top-N rows (bounded IN-list over the
+    // rollup: distinct groups on one card page, plus the selected groups so their filter chips can
+    // carry a name). Groups without a stored cohort (< 30 priced peers) get no badge — honest absence.
+    const known = new Set(groups.map((g) => g.group));
     const missing = contracts
       .map((c) => c.cpvGroup)
       .filter((g): g is string => g != null && !known.has(g));
     for (const g of cpvSel) if (!known.has(g)) missing.push(g);
-    const medians = await getCpvGroupMedians(db, missing);
+    const medians = await getCohortMedians(db, missing);
 
     return {
       angle: angle as 'cpv' | 'cross',
@@ -97,7 +114,12 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       year,
       cpvSel,
       trend,
-      stats,
+      stats: { groups, totalGroups: kpis.cohortCount },
+      method: {
+        flaggedCount: kpis.flaggedCount,
+        minCohortSize: kpis.minCohortSize,
+        zThreshold: kpis.zThreshold,
+      },
       contracts,
       medians,
     };
@@ -780,48 +802,10 @@ function Swatch({ box, line, dashed }: { box?: boolean; line?: boolean; dashed?:
 // filtered contract cards. Every control is a plain <Link> mutating the query string, so the lens
 // views are fully SSR/no-JS capable.
 
-/** ×N with a Bulgarian decimal comma: 2.4 → '×2,4', 15 → '×15'. */
-function multText(mult: number): string {
-  if (mult >= 10) return `×${Math.round(mult)}`;
-  return `×${(Math.round(mult * 10) / 10).toString().replace('.', ',')}`;
-}
-
-function relLabel(valueEur: number, medianEur: number): { text: string; cls: string } {
-  const mult = valueEur / medianEur;
-  if (mult >= 1.3) return { text: `${multText(mult)} типичното`, cls: 'ov-rel-hi' };
-  if (mult <= 0.75) return { text: 'под типичното', cls: 'ov-rel-lo' };
-  return { text: '≈ типичното', cls: 'ov-rel-mid' };
-}
-
-// Deterministic jitter for the dot cloud (presentation only — the x positions are real values).
-function jitter(seedText: string, i: number): number {
-  let h = 2166136261;
-  for (const ch of `${seedText}:${i}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-  return ((h >>> 8) % 1000) / 1000 - 0.5;
-}
-
-const LOG_MIN = 1e3;
-
-function logMax(groups: CpvGroupStat[]): number {
-  const max = Math.max(1e6, ...groups.map((g) => g.maxEur));
-  return 10 ** Math.ceil(Math.log10(max));
-}
-
-function axisLabel(v: number): string {
-  return v >= 1e6 ? `${v / 1e6}М` : `${v / 1e3}к`;
-}
-
-/** log-€ → x in the 320-wide distribution strip. */
-function makeLx(gMax: number) {
-  const lo = Math.log10(LOG_MIN);
-  const hi = Math.log10(gMax);
-  return (v: number) =>
-    6 + ((Math.log10(Math.min(gMax, Math.max(LOG_MIN, v))) - lo) / (hi - lo)) * 308;
-}
-
 // Per-group distribution strip: p10–p90 box, real-value dot cloud (log x), median line. Dots at
-// ≥5× the group median are highlighted — the same "worth a look" cue as the card labels.
-function DistStrip({ g, gMax }: { g: CpvGroupStat; gMax: number }) {
+// ≥5× the group median are highlighted — the same "worth a look" cue as the card labels. All
+// geometry helpers (jitter, log scale) live in lib/obzor-cpv.ts.
+function DistStrip({ g, gMax }: { g: CpvLensGroup; gMax: number }) {
   const lx = makeLx(gMax);
   return (
     <svg viewBox="0 0 320 30" className="ov-dist" aria-hidden="true">
@@ -876,7 +860,8 @@ function DistAxis({ gMax }: { gMax: number }) {
 }
 
 function TrendsOverview({ loaderData }: { loaderData: OverviewData }) {
-  const { angle, sort, cpvSort, year, cpvSel, trend, stats, contracts, medians } = loaderData;
+  const { angle, sort, cpvSort, year, cpvSel, trend, stats, method, contracts, medians } =
+    loaderData;
   const [sp] = useSearchParams();
   const navigating = useNavigation().state !== 'idle';
 
@@ -902,9 +887,10 @@ function TrendsOverview({ loaderData }: { loaderData: OverviewData }) {
     return hrefWith({ cpv: next.length ? next : null });
   };
 
-  // Cohort baseline per CPV group: top-N stats first, on-demand medians for the rest.
+  // Cohort baseline per CPV group, all rollup-sourced: top-N lens rows first, on-demand cohort
+  // medians for the rest. A group with no entry (< 30 priced peers) gets no „спрямо типичното" badge.
   const cohorts = new Map<string, { name: string | null; medianEur: number }>();
-  for (const m of medians) cohorts.set(m.group, { name: m.name, medianEur: m.medianEur });
+  for (const m of medians) cohorts.set(m.code, { name: m.label, medianEur: m.medianEur });
   for (const g of stats.groups) cohorts.set(g.group, { name: g.name, medianEur: g.medianEur });
 
   const datedContracts = trend.points.reduce((sum, p) => sum + p.contracts, 0);
@@ -972,6 +958,11 @@ function TrendsOverview({ loaderData }: { loaderData: OverviewData }) {
               Всеки код събира сходни поръчки. Разсейването е нормално — обемите варират. Кликни
               ред, за да видиш договорите. Показани са {stats.groups.length}-те групи с най-много
               договори.
+              <MetricInfo
+                title="Как се смятат типичното и отклоненията"
+                summary={`Всеки 5-цифрен CPV код е кохорта от сходни поръчки; „типична" е медианата на стойностите ѝ. Необичайно скъпите договори се засичат с устойчива статистика върху логаритъма на стойността (log-MAD), при отклонение z ≥ ${method.zThreshold} само нагоре и само в кохорти с поне ${count(method.minCohortSize)} поръчки с потвърдена стойност. Оцветените точки в лентата са стойности ≥5× медианата.`}
+                readout={`${count(stats.totalGroups)} кохорти · ${count(method.flaggedCount)} маркирани договора. Голяма стойност ≠ надплащане — данните нямат количества, затова това е ориентир за преглед, не оценка.`}
+              />
             </p>
           )}
         </div>
