@@ -29,6 +29,7 @@ import {
   STATUS_LABEL,
   type AnnexEntry,
 } from '../lib/overruns-inspector';
+import { withParams } from '../lib/filters';
 
 export function meta({ matches }: Route.MetaArgs) {
   return seoMeta({
@@ -671,13 +672,8 @@ export default function Overruns({ loaderData }: Route.ComponentProps) {
   const [sp] = useSearchParams();
   const navigating = useNavigation().state !== 'idle';
 
-  const sortHref = (next: 'absolute' | 'percent') => {
-    const params = new URLSearchParams(sp);
-    if (next === 'absolute') params.delete('by');
-    else params.set('by', 'percent');
-    const qs = params.toString();
-    return qs ? `/overruns?${qs}` : '/overruns';
-  };
+  const sortHref = (next: 'absolute' | 'percent') =>
+    `/overruns${withParams(sp, { by: next === 'percent' ? 'percent' : null })}`;
 
   return (
     <>
