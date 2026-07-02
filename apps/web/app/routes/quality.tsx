@@ -13,6 +13,7 @@ import type { Route } from './+types/quality';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
+import { MetricInfo } from '../components/MetricInfo';
 import { TotalsStrip, type Total } from '../components/TotalsStrip';
 import { Callout, Chip, Section } from '../components/ui';
 import { publicCache } from '../lib/cache';
@@ -67,7 +68,12 @@ const PILLAR_META: {
     letter: 'A',
     name: 'Контестабилност',
     desc: 'брой оферти, участие на МСП',
-    leaves: ['брой оферти (спрямо група)', 'единствена оферта', 'дял на МСП', 'електронен търг'],
+    leaves: [
+      'брой оферти (спрямо група)',
+      'единствена оферта',
+      'дял оферти от МСП',
+      'електронен търг',
+    ],
   },
   {
     key: 'b',
@@ -256,15 +262,34 @@ export default function Quality({ loaderData }: Route.ComponentProps) {
   const selRow = scope.sel ? (ranking.find((r) => r.key === scope.sel) ?? null) : null;
 
   const totals: Total[] = [
-    { num: `${score100(overview.avgOverall)}/100`, label: 'среден индекс (оценени договори)' },
+    {
+      num: `${score100(overview.avgOverall)}/100`,
+      label: 'среден индекс (оценени договори)',
+      info: {
+        title: 'Среден индекс',
+        summary:
+          'Средният индекс 0–100 само на оценените договори. Индекс = 0,6 × претеглената средна на измеренията + 0,4 × най-слабото измерение. Договорите без оценка не влизат — не се броят като нула.',
+      },
+    },
     {
       num:
         overview.totalContracts > 0 ? pct(overview.scoredContracts / overview.totalContracts) : '—',
       label: `оценени договори (${count(overview.scoredContracts)})`,
+      info: {
+        title: 'Оценени договори',
+        summary:
+          'Дял на договорите с достатъчно данни за оценка (покритие ≥ 0,40 и достоверна стойност). Останалите са „недостатъчно данни“ — никога нула.',
+      },
     },
     {
       num: overview.meanCoverage == null ? '—' : pct(overview.meanCoverage),
       label: 'средно покритие на данните',
+      info: {
+        align: 'end',
+        title: 'Средно покритие',
+        summary:
+          'Среден дял на наличните източникови полета по договор. Покритието определя нивото на увереност, но никога не влиза в аритметиката на оценката.',
+      },
     },
   ];
 
@@ -310,7 +335,12 @@ export default function Quality({ loaderData }: Route.ComponentProps) {
                 <article className="q-pillar-card" key={p.key}>
                   <header>
                     <span className="q-letter">{p.letter}</span>
-                    <span className="q-weight">{Math.round(QUALITY_WEIGHTS[p.key] * 100)}%</span>
+                    <span
+                      className="q-weight"
+                      title="Тегло във формулата. Базови тегла: A 30 · B 15 · C 25 · D 20 · E 10."
+                    >
+                      {Math.round(QUALITY_WEIGHTS[p.key] * 100)}%
+                    </span>
                   </header>
                   <h3>{p.name}</h3>
                   <p className={`q-pillar-val q-${band(v)}`}>
@@ -584,6 +614,20 @@ export default function Quality({ loaderData }: Route.ComponentProps) {
   );
 }
 
+// How each grain's group score aggregates (mirrors the *_quality_totals rollups in
+// derive-contract-features.sql §7.4/§9): authority/supplier are value-weighted with a 15%
+// single-contract cap; sector/region/funding are value-weighted uncapped; year is unweighted.
+const GRAIN_WEIGHTING: Record<QualityGrain, string> = {
+  authority:
+    'Претеглена по стойност на договора, като тежестта на един договор е ограничена до 15% от общата стойност на институцията — един много голям договор не може да определи сам оценката ѝ.',
+  supplier:
+    'Претеглена по стойност на договора, като тежестта на един договор е ограничена до 15% от общата стойност на доставчика — един много голям договор не може да определи сам оценката му.',
+  sector: 'Претеглена по стойност на договора — по-големите договори тежат повече.',
+  region: 'Претеглена по стойност на договора — по-големите договори тежат повече.',
+  funding: 'Претеглена по стойност на договора — по-големите договори тежат повече.',
+  year: 'Непретеглена средна на договор — всеки договор тежи еднакво, за съпоставимост между годините.',
+};
+
 function rankColumns(
   grain: QualityGrain,
   qs: (patch: Record<string, string | null>) => string,
@@ -604,19 +648,48 @@ function rankColumns(
     },
     {
       key: 'index',
-      header: 'Индекс',
+      header: (
+        <>
+          Индекс
+          <MetricInfo
+            title="Индекс"
+            summary={`Обобщена оценка 0–100 на оценените договори в реда. ${GRAIN_WEIGHTING[grain]} Договорите без оценка се изключват и от числителя, и от знаменателя — никога не се броят като нула.`}
+            readout="Индекс на договор = 0,6 × претеглената средна на измеренията + 0,4 × най-слабото измерение."
+          />
+        </>
+      ),
+      label: 'Индекс',
       align: 'num',
       cell: (r) => <IndexBar score={r.avgOverall} />,
     },
     {
       key: 'pillars',
-      header: 'Измерения A–E',
+      header: (
+        <>
+          Измерения A–E
+          <MetricInfo
+            title="Измерения A–E"
+            summary="Средни резултати по петте измерения — A конкуренция, B откритост, C стойност, D връзки, E прозрачност — при същото претегляне като колоната „Индекс“. Празна колонка = няма данни, не нула."
+          />
+        </>
+      ),
+      label: 'Измерения A–E',
       align: 'center',
       cell: (r) => <PillarPills pillars={r.pillars} />,
     },
     {
       key: 'contracts',
-      header: 'Оценени',
+      header: (
+        <>
+          Оценени
+          <MetricInfo
+            align="end"
+            title="Оценени"
+            summary="Оценени договори спрямо всички договори на реда. Договор без достатъчно данни остава без оценка и не влиза в средните."
+          />
+        </>
+      ),
+      label: 'Оценени',
       align: 'num',
       cell: (r) => (
         <>
@@ -627,7 +700,17 @@ function rankColumns(
     },
     {
       key: 'coverage',
-      header: 'Увереност',
+      header: (
+        <>
+          Увереност
+          <MetricInfo
+            align="end"
+            title="Увереност"
+            summary="Ниво според средното покритие на данните в реда: ≥ 0,80 → Високо; ≥ 0,60 → Средно; ≥ 0,40 → Ниско; под 0,40 → „няма оценка“. Квалифицира числото на доверие, не променя стойността му."
+          />
+        </>
+      ),
+      label: 'Увереност',
       align: 'center',
       secondary: true,
       cell: (r) => <CovChip tier={r.coverageTier} />,
@@ -780,7 +863,14 @@ function ContractCard({
       <header>
         <span className="q-card-date">{date(c.signedAt)}</span>
         {c.cpvDivision && <span className="q-card-cpv">CPV {c.cpvDivision}</span>}
-        <span className={`q-card-score q-${band(c.overall)}`}>
+        <span
+          className={`q-card-score q-${band(c.overall)}`}
+          title={
+            c.overall == null
+              ? 'няма оценка — недостатъчно данни (не се брои като 0)'
+              : 'Индекс 0–100: 0,6 × претеглената средна на измеренията + 0,4 × най-слабото измерение.'
+          }
+        >
           {c.overall == null ? '—' : score100(c.overall)}
         </span>
       </header>
@@ -835,17 +925,34 @@ function Scorecard({ card }: { card: QualityScorecard }) {
         <div className="q-sc-side">
           {card.known && card.worstPillar && (
             <p className="q-sc-worst">
-              <span>Най-слабо звено</span>
+              <span>
+                Най-слабо звено
+                <MetricInfo
+                  align="end"
+                  title="Най-слабо звено"
+                  summary="Измерението с най-нисък резултат. То дава члена 0,4 × най-слабо във формулата — критична слабост не може да се усредни от силните измерения."
+                />
+              </span>
               <b>{PILLAR_META.find((p) => p.key === card.worstPillar)?.name}</b>
             </p>
           )}
           <p className={`q-sc-conf q-cov-text-${card.coverageTier}`}>
             увереност · {COVERAGE_LABELS[card.coverageTier]}
+            <MetricInfo
+              align="end"
+              title="Увереност"
+              summary="Ниво според покритието на данните: ≥ 0,80 → Високо; ≥ 0,60 → Средно; ≥ 0,40 → Ниско; под 0,40 → оценката се задържа („неоценен“). Увереността квалифицира числото на доверие, не променя стойността му."
+            />
           </p>
           <div className={`q-sc-ring q-${band(card.overall)}${card.known ? '' : ' is-unknown'}`}>
             <b>{card.known ? score100(card.overall) : '—'}</b>
             <span>{card.known ? '/100' : 'неоценен'}</span>
           </div>
+          <MetricInfo
+            align="end"
+            title="Индекс"
+            summary="Индекс 0–100: 0,6 × претеглената средна на измеренията + 0,4 × най-слабото измерение. Ориентир за преглед, не заключение."
+          />
         </div>
       </div>
 
@@ -856,11 +963,21 @@ function Scorecard({ card }: { card: QualityScorecard }) {
             <b className="q-weak">{score100(card.worst)}</b> · 0,6 × {score100(card.wmean)} + 0,4 ×{' '}
             {score100(card.worst)} ={' '}
             <b className={`q-${band(card.overall)}`}>{score100(card.overall)}</b>
+            <MetricInfo
+              title="Формула на индекса"
+              summary="Два члена: 0,6 × претеглената средна на наличните измерения и 0,4 × най-слабото от тях. Най-слабото измерение получава 40% тегло, за да не може критична слабост да се усредни от силните."
+            />
           </p>
 
           <div className="q-sc-contrib">
             <p className="q-sc-contrib-cap">
-              <span>Принос към претеглената средна</span>
+              <span>
+                Принос към претеглената средна
+                <MetricInfo
+                  title="Принос"
+                  summary="Принос = тегло × резултат. Сборът на приносите дава претеглената средна — първия член на формулата."
+                />
+              </span>
               <span>широчина = тегло · височина = резултат</span>
             </p>
             <div className="q-sc-contrib-bars">
@@ -888,6 +1005,15 @@ function Scorecard({ card }: { card: QualityScorecard }) {
             </div>
           </div>
 
+          <p className="q-sc-contrib-cap">
+            <span>
+              Измерения и тегла
+              <MetricInfo
+                title="Тегла на измеренията"
+                summary="Тегло във формулата. Базови тегла: A 30 · B 15 · C 25 · D 20 · E 10. Когато измерение няма данни, теглото му се преразпределя пропорционално между останалите."
+              />
+            </span>
+          </p>
           <div className="q-sc-pillars">
             {PILLAR_META.map((p) => {
               const s = card.pillars[p.key];
@@ -897,8 +1023,15 @@ function Scorecard({ card }: { card: QualityScorecard }) {
                 <div className={`q-sc-pillar${isWorst ? ' is-worst' : ''}`} key={p.key}>
                   <header>
                     <span className="q-letter small">{p.letter}</span>
-                    <span className="q-weight">
-                      {w == null ? 'отпада' : `${Math.round(w * 100)}%`}
+                    <span
+                      className="q-weight"
+                      title={
+                        w == null
+                          ? 'Няма данни за това измерение — изключено е от формулата (НЕ се брои като 0); теглото му се преразпределя между останалите.'
+                          : `Тегло във формулата (базово ${Math.round(QUALITY_WEIGHTS[p.key] * 100)}%). Когато измерение няма данни, теглото му се преразпределя пропорционално.`
+                      }
+                    >
+                      {w == null ? 'няма данни' : `${Math.round(w * 100)}%`}
                     </span>
                   </header>
                   <h4>{p.name}</h4>
@@ -912,19 +1045,34 @@ function Scorecard({ card }: { card: QualityScorecard }) {
                   <dl className="q-sc-leaves">
                     {leafRows[p.key].map((leaf) => (
                       <div key={leaf.k}>
-                        <dt>{leaf.k}</dt>
-                        <dd>{leaf.v}</dd>
+                        <dt title={leaf.t}>{leaf.k}</dt>
+                        <dd title={leaf.v === '—' ? 'няма данни (не се брои като 0)' : undefined}>
+                          {leaf.v}
+                        </dd>
                       </div>
                     ))}
                   </dl>
-                  {isWorst && <p className="q-worst-badge">Най-слабо звено</p>}
+                  {isWorst && (
+                    <p
+                      className="q-worst-badge"
+                      title="Това измерение дава члена 0,4 × най-слабо във формулата."
+                    >
+                      Най-слабо звено
+                    </p>
+                  )}
                 </div>
               );
             })}
           </div>
 
           <p className="q-sc-covflags">
-            <span className="q-covflags-label">Покритие</span>
+            <span className="q-covflags-label">
+              Покритие
+              <MetricInfo
+                title="Покритие"
+                summary="Кои източникови полета присъстват за този договор. Липсващо поле пропуска съответния под-показател — не се брои като нула."
+              />
+            </span>
             {[
               { label: 'брой оферти', ok: card.coverageFlags.bids },
               { label: 'дял МСП', ok: card.coverageFlags.sme },
@@ -971,9 +1119,11 @@ function Scorecard({ card }: { card: QualityScorecard }) {
 }
 
 // Raw leaves → display rows per pillar. Missing values render as „—" (unknown, never zero).
+// `t` is the one-line title-tooltip on the label: the source field + what a high/low value means
+// (grounded in derive-contract-features.sql / the quality spec — neutral, descriptive).
 function scorecardLeaves(
   card: QualityScorecard,
-): Record<keyof QualityPillars, { k: string; v: string }[]> {
+): Record<keyof QualityPillars, { k: string; v: string; t: string }[]> {
   const l = card.leaves;
   const num = (v: number | null, dp = 2) =>
     v == null
@@ -989,47 +1139,86 @@ function scorecardLeaves(
         k: 'Брой оферти',
         v:
           l.bidsReceived == null ? '—' : `${l.bidsReceived}${l.singleOffer ? ' · единствена' : ''}`,
+        t: 'Брой получени оферти по обявлението; повече оферти означава по-силна конкуренция — оценява се спрямо групата сходни договори.',
       },
-      { k: 'Дял МСП', v: l.smeRate == null ? '—' : pct(l.smeRate) },
-      { k: 'Електронен търг', v: yesNo(l.isEauction) },
+      {
+        k: 'Дял оферти от МСП',
+        v: l.smeRate == null ? '—' : pct(l.smeRate),
+        t: 'Дял на офертите, подадени от малки и средни предприятия (оферти от МСП ÷ всички оферти); по-висок дял означава по-отворен, нископрагов пазар.',
+      },
+      {
+        k: 'Електронен търг',
+        v: yesNo(l.isEauction),
+        t: 'Дали при възлагането е използван електронен търг; наличието му добавя малък бонус към измерение A.',
+      },
     ],
     b: [
-      { k: 'Вид процедура', v: l.procedureType ?? '—' },
-      { k: 'Ускорена процедура', v: yesNo(l.isAccelerated) },
+      {
+        k: 'Вид процедура',
+        v: l.procedureType ?? '—',
+        t: 'Видът процедура от обявлението; откритата процедура носи най-висок резултат, прякото договаряне — най-нисък.',
+      },
+      {
+        k: 'Ускорена процедура',
+        v: yesNo(l.isAccelerated),
+        t: 'Дали процедурата е провеждана по ускорен ред; ускоряването намалява резултата на B.',
+      },
       {
         k: 'Срок за оферти',
         v: l.bidWindowDays == null ? '—' : `${Math.round(l.bidWindowDays)} дни`,
+        t: 'Дни от публикуването на обявлението до крайния срок за подаване на оферти; много кратък срок ограничава участието.',
       },
     ],
     c: [
-      { k: 'Брой анекси', v: l.annexCount == null ? '—' : String(l.annexCount) },
-      { k: 'Превишение', v: l.costOverrunRatio == null ? '—' : `${num(l.costOverrunRatio)}×` },
+      {
+        k: 'Брой анекси',
+        v: l.annexCount == null ? '—' : String(l.annexCount),
+        t: 'Брой допълнителни споразумения след подписването; повече анекси означава по-нисък резултат на C.',
+      },
+      {
+        k: 'Превишение',
+        v: l.costOverrunRatio == null ? '—' : `${num(l.costOverrunRatio)}×`,
+        t: 'Текущата стойност спрямо стойността при подписване; 1× значи без превишение, 2× и повече сваля под-показателя до 0.',
+      },
       {
         k: 'Отклонение от прогнозата',
         v: l.estimateDevRatio == null ? '—' : pct(l.estimateDevRatio),
+        t: 'Разлика между подписаната и прогнозната стойност спрямо прогнозната; голямо отклонение означава по-слаба точност на планирането.',
       },
     ],
     d: [
-      { k: 'HHI на купувача', v: num(l.authorityHhi) },
+      {
+        k: 'HHI на купувача',
+        v: num(l.authorityHhi),
+        t: 'Концентрация на доставчиците при този възложител (индекс Херфиндал–Хиршман, 0–1); по-високо означава разходи, съсредоточени в малко доставчици.',
+      },
       {
         k: 'Дял повторни печалби',
         v: l.repeatWinIntensity == null ? '—' : pct(l.repeatWinIntensity),
+        t: 'Дял на договорите на възложителя, спечелени от същия изпълнител; по-висок дял означава по-концентрирана връзка.',
       },
       {
         k: 'Възраст на връзката',
         v: l.edgeAgeYears == null ? '—' : `${num(l.edgeAgeYears, 1)} г.`,
+        t: 'Години от първия договор между този възложител и този изпълнител; по-дълга повтаряща се връзка носи по-нисък резултат на D.',
       },
     ],
     e: [
       {
         k: 'Дати',
         v: l.dateFlag == null || l.dateFlag === 'ok' ? 'чисто' : 'подпис преди публикуване',
+        t: 'Проверка на реда на датите в публикацията; „подпис преди публикуване“ е сигнал за непоследователно публикуване.',
       },
       {
         k: 'Подизпълнение',
         v: l.subcontractPassthrough == null ? '—' : pct(l.subcontractPassthrough),
+        t: 'Обявена стойност за подизпълнители спрямо стойността при подписване; дял над 70% сваля резултата на E.',
       },
-      { k: 'Срок', v: l.durationDays == null ? '—' : `${count(l.durationDays)} дни` },
+      {
+        k: 'Срок',
+        v: l.durationDays == null ? '—' : `${count(l.durationDays)} дни`,
+        t: 'Срок на изпълнение в дни; срок над 3 години извън рамково споразумение сваля резултата на E.',
+      },
     ],
   };
 }

@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 export interface Column<Row> {
   key: string;
   header: ReactNode;
+  label?: string; // plain-text fallback for the mobile card data-label when `header` is a ReactNode
   align?: 'num' | 'center' | 'money'; // "money" → right-aligned mono cell, numeric header
   secondary?: boolean; // hidden on tablet widths (.col-secondary)
   isTitle?: boolean; // becomes the card heading on phones
@@ -28,7 +29,8 @@ export function DataTable<Row>({
   caption?: string;
   getKey: (row: Row, index: number) => string | number;
 }) {
-  const labelOf = (c: Column<Row>) => (typeof c.header === 'string' ? c.header : undefined);
+  const labelOf = (c: Column<Row>) =>
+    c.label ?? (typeof c.header === 'string' ? c.header : undefined);
   return (
     <div className={`table-wrap tbl-${variant}`}>
       <table>
