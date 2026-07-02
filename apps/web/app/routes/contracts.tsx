@@ -1,12 +1,6 @@
 import { Link, useNavigation, useSearchParams } from 'react-router';
 import { count, date, money, moneyBare } from '@sigma/shared';
-import {
-  contractsSummary,
-  getCohortLabel,
-  getContractFacets,
-  listContracts,
-  normalizeContractSort,
-} from '@sigma/db';
+import { contractsSummary, getCohortLabel, getContractFacets, listContracts } from '@sigma/db';
 import type { Route } from './+types/contracts';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
@@ -16,6 +10,7 @@ import { Pagination } from '../components/Pagination';
 import { Callout } from '../components/ui';
 import {
   buildSectorGroup,
+  contractListFilters,
   getMulti,
   leaderboardRankOffset,
   pageNav,
@@ -50,25 +45,14 @@ export function headers() {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const sp = new URL(request.url).searchParams;
-  // Validate ?cpv to exactly 5 digits before it reaches a filter/cache key — a malformed value is
-  // dropped (so it can't mint unbounded distinct edge-cache keys nor poison the result set).
-  const cpvRaw = sp.get('cpv');
-  const cpv = cpvRaw && /^\d{5}$/.test(cpvRaw) ? cpvRaw : null;
+  // Filters come from the shared parser so the HTML list and the CSV export apply an identical set
+  // (issue #138); only pagination is route-specific here.
   const params = {
-    sort: normalizeContractSort(sp.get('sort')),
-    years: getMulti(sp, 'year'),
-    sectors: getMulti(sp, 'sector'),
-    cpv,
-    procedureGroups: getMulti(sp, 'procedure'),
-    valueBucket: sp.get('value'),
-    eu: (sp.get('eu') as 'eu' | 'national' | null) || null,
-    authority: sp.get('authority'),
-    bidder: sp.get('bidder'),
-    q: sp.get('q'),
-    bids: (sp.get('bids') === '1' ? 'one' : null) as 'one' | null,
+    ...contractListFilters(sp),
     cursor: sp.get('cursor'),
     pageSize: PAGE_SIZE.contracts,
   };
+  const cpv = params.cpv;
   const { env } = context.cloudflare;
   // Page `Cache-Control` (publicCache(1800)) memoises full responses at the edge — no per-query cache.
   return withDbRetry(async () => {

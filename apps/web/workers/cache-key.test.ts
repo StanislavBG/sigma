@@ -66,6 +66,16 @@ describe('cacheKey', () => {
     ]);
   });
 
+  it('keys the edge cache on the bids filter (issue #138 drift, CWE-349)', () => {
+    // /contracts is edge-cached and its loader consumes ?bids via contractListFilters; without the
+    // allow-list entry, /contracts?bids=1 and /contracts share one key and cross-serve.
+    const filtered = cacheUrl('http://local/contracts?bids=1');
+    const unfiltered = cacheUrl('http://local/contracts');
+
+    expect(filtered.searchParams.get('bids')).toBe('1');
+    expect(filtered.toString()).not.toBe(unfiltered.toString());
+  });
+
   it('preserves multi-values for allowed params', () => {
     const url = cacheUrl('http://local/companies?sector=45&kind=company&sector=72');
 
