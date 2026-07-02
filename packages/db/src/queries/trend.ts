@@ -101,21 +101,6 @@ function fillPeriods(first: string, last: string, granularity: TrendGranularity)
   return out;
 }
 
-const SECTOR_OPTION_LIMIT = 12;
-
-// Sector select options: present sectors by value (curated label), capped. Same source as getFlows.
-async function sectorOptions(db: D1Database): Promise<SectorRef[]> {
-  const { results } = await db
-    .prepare(`SELECT division FROM sector_totals ORDER BY value_eur DESC LIMIT ?`)
-    .bind(SECTOR_OPTION_LIMIT)
-    .all<{ division: string }>();
-  const byCode = new Map(CPV_SECTORS.map((s) => [s.code, s]));
-  return results
-    .map((r) => byCode.get(r.division))
-    .filter((s): s is (typeof CPV_SECTORS)[number] => Boolean(s))
-    .map((s) => ({ code: s.code, label: s.short ?? s.label, short: s.short ?? s.label }));
-}
-
 export async function getSpendingTrend(
   db: D1Database,
   p: TrendParams,
