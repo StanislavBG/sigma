@@ -17,6 +17,7 @@ import type {
 import { CPV_SECTORS } from '@sigma/config';
 import { cleanName, entityName } from '@sigma/shared';
 import { contractSlug } from './identity';
+import { sectorOptions } from './sectors';
 
 export interface TrendParams {
   sector?: string | null;
