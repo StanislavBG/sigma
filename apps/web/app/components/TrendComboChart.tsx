@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { count as fmtCount, money } from '@sigma/shared';
 import { buildChartModel } from '../lib/trends-chart';
 import type { DisplayPoint } from '../lib/trends-series';
@@ -25,6 +25,26 @@ const COUNT_INK = 'var(--trend-count-ink)'; // darker slate — count axis + П�
 const EUR_LINE = 'var(--trend-line)'; // tan — actual/forecast € line
 const MONO = "'IBM Plex Mono', ui-monospace, monospace";
 
+// Phone widths render the default 760-unit viewBox at ~0.42× scale, which shrinks the in-SVG text to
+// ~3–4px (mobile audit). At ≤720px the chart re-renders on a narrower 420-unit canvas with taller
+// plot and scaled-up font sizes so labels stay ≥10px on a 320px screen. SSR renders the desktop
+// dims (no window); the client swaps after hydration — pure progressive enhancement, the visual
+// re-layout is driven by real viewport width.
+const COMPACT_DIMS = { width: 420, height: 300 };
+const COMPACT_FONT_SCALE = 1.45;
+
+function useCompactChart(): boolean {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 720px)');
+    const update = () => setCompact(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return compact;
+}
+
 export function TrendComboChart({
   points,
   trendWindow,
@@ -41,10 +61,19 @@ export function TrendComboChart({
   partial?: { valueEur: number; contracts: number } | null;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const compact = useCompactChart();
   const model = useMemo(
-    () => buildChartModel(points, { trendWindow, barRatio, partial }),
-    [points, trendWindow, barRatio, partial],
+    () =>
+      buildChartModel(points, {
+        trendWindow,
+        barRatio,
+        partial,
+        dims: compact ? COMPACT_DIMS : undefined,
+      }),
+    [points, trendWindow, barRatio, partial, compact],
   );
+  // Scale the in-SVG font sizes on the compact canvas so they stay legible at phone widths.
+  const fs = (v: number): number => (compact ? Math.round(v * COMPACT_FONT_SCALE * 10) / 10 : v);
   if (points.length < 2) return null;
 
   const { dims, plotBottom } = model;
@@ -61,7 +90,7 @@ export function TrendComboChart({
         role="img"
         aria-label={ariaLabel}
         className="trend-svg"
-        onMouseLeave={() => setHover(null)}
+        onPointerLeave={() => setHover(null)}
       >
         <title>{ariaLabel}</title>
         <defs>
@@ -101,7 +130,7 @@ export function TrendComboChart({
               x={model.band.labelX}
               y={model.band.labelY}
               textAnchor="middle"
-              fontSize={8.5}
+              fontSize={fs(8.5)}
               fontWeight={600}
               letterSpacing="0.14em"
               style={{ fill: COUNT_INK, fontFamily: MONO }}
@@ -125,7 +154,7 @@ export function TrendComboChart({
             <text
               x={2}
               y={g.y - 3}
-              fontSize={9}
+              fontSize={fs(9)}
               style={{ fill: 'var(--ink-soft)', fontFamily: MONO }}
             >
               {g.label}
@@ -184,7 +213,7 @@ export function TrendComboChart({
             x={model.trendTag.x}
             y={model.trendTag.y}
             textAnchor="end"
-            fontSize={8.5}
+            fontSize={fs(8.5)}
             fontWeight={600}
             letterSpacing="0.12em"
             style={{ fill: 'var(--ink)', fontFamily: MONO }}
@@ -198,7 +227,7 @@ export function TrendComboChart({
           x={width}
           y={plotTop}
           textAnchor="end"
-          fontSize={8}
+          fontSize={fs(8)}
           style={{ fill: COUNT_INK, fontFamily: MONO }}
         >
           договори ▸
@@ -209,7 +238,7 @@ export function TrendComboChart({
             x={width}
             y={t.y + 3}
             textAnchor="end"
-            fontSize={8.5}
+            fontSize={fs(8.5)}
             style={{ fill: COUNT_INK, fontFamily: MONO }}
           >
             {t.label}
@@ -223,7 +252,7 @@ export function TrendComboChart({
             x={t.x}
             y={height - 5}
             textAnchor="middle"
-            fontSize={9}
+            fontSize={fs(9)}
             style={{
               fill: t.forecast ? 'var(--trend-xtick-fc)' : 'var(--ink-soft)',
               fontFamily: MONO,
@@ -247,7 +276,7 @@ export function TrendComboChart({
               x={model.peak.labelX}
               y={model.peak.labelY}
               textAnchor={model.peak.anchor}
-              fontSize={9.5}
+              fontSize={fs(9.5)}
               fontWeight={600}
               style={{ fill: 'var(--accent)', fontFamily: MONO }}
             >
@@ -301,7 +330,8 @@ export function TrendComboChart({
             width={hit.w}
             height={height}
             fill="transparent"
-            onMouseEnter={() => setHover(i)}
+            // pointerenter (not mouseenter) so a tap reveals the tooltip on touch screens too
+            onPointerEnter={() => setHover(i)}
           />
         ))}
       </svg>
@@ -310,7 +340,8 @@ export function TrendComboChart({
         <div
           className="trend-tip"
           style={{
-            left: `${hoverPt.leftPct}%`,
+            // clamp so the centred tooltip never overflows the panel/viewport at the plot's edges
+            left: `clamp(84px, ${hoverPt.leftPct}%, calc(100% - 84px))`,
             top: `${(Math.min(hoverPt.yValue, hoverPt.yCount) / height) * 100}%`,
           }}
         >
