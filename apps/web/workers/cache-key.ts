@@ -12,7 +12,7 @@ export const CACHE_QUERY_PARAMS = new Set([
   'conf', // /quality: confidence-tier facet on the contracts list — changes rows + totals (CWE-349)
   'contract', // /quality: scorecard subject
   'count',
-  'cpv', // /contracts — exact 5-digit CPV filter; ALSO /trends: 5-digit CPV group lens filter
+  'cpv', // /contracts — exact 5-digit CPV filter; ALSO /trends: repeatable CPV group multi-select faceting the обзор chart + list (CWE-349)
   'cpvSort', // /trends: CPV list ordering
   'csort', // /quality: contract list ordering
   'cursor',
