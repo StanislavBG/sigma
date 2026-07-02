@@ -32,7 +32,7 @@ deploymentTarget = "vm"
 # No `corepack enable` — it tries to symlink pnpm into the read-only Nix store and fails with EACCES.
 # pnpm is already on PATH. Schema is applied at runtime by serve.mjs (empty, no seed — real data only),
 # so the build is just install + build.
-build = ["sh", "-c", "export VITE_TRUST_PROXY=1; pnpm install --frozen-lockfile && pnpm build"]
+build = ["sh", "-c", "export VITE_TRUST_PROXY=1; pnpm install --frozen-lockfile && pnpm build && pnpm --filter @sigma/web run build:replit"]
 # `pnpm start` runs scripts/serve.mjs: the SSR app on an internal port + a token-protected POST /__ingest
 # so this operator's machine can publish a fresh corpus daily (no redeploy). Set DATA_PUSH_TOKEN as a
 # Replit *Secret* (Deployments → Secrets) to enable publishing; without it, ingest returns 503.

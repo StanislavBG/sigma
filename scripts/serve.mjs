@@ -7,7 +7,7 @@
 // Ingest streams the gzipped SQLite to the persistent disk, VALIDATES it is a real, non-empty corpus
 // (never serve fabricated/empty data), atomically swaps it into the miniflare D1 path, and restarts the
 // SSR child so it reopens the new database. Everything else is reverse-proxied to the SSR child.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   appendFileSync,
@@ -146,6 +146,34 @@ async function restoreInBackground() {
 let child = null;
 let restarting = false;
 
+// The Replit vite/wrangler config (no `ai`/`vectorize` bindings): those are remote-only — with them
+// in scope `vite preview` tries to open a remote wrangler session, which needs a Cloudflare login the
+// Repl doesn't have, and the SSR child crash-loops. The assistant route degrades to 503 without them.
+const REPLIT_VITE_CONFIG = 'vite.config.replit.mts';
+
+// Guard against a build made with the default (Cloudflare) config — e.g. a stale image or a plain
+// `pnpm build`: its build/server/wrangler.json still carries the remote-only bindings, so rebuild
+// once with the Replit config before serving.
+function ensureReplitBuild() {
+  const builtCfg = join(root, 'apps/web/build/server/wrangler.json');
+  let needs = true;
+  try {
+    const cfg = readFileSync(builtCfg, 'utf8');
+    // Non-empty vectorize list or an ai binding object ⇒ built with the Cloudflare config.
+    needs = /"vectorize":\s*\[\s*\{/.test(cfg) || /"ai":\s*\{/.test(cfg);
+  } catch {
+    needs = true; // no build at all
+  }
+  if (!needs) return;
+  console.log('[serve] build was made with remote-only bindings (or missing) — rebuilding with the Replit config…');
+  const res = spawnSync(
+    'pnpm',
+    ['--filter', '@sigma/web', 'run', 'build:replit'],
+    { cwd: root, stdio: 'inherit', env: process.env },
+  );
+  if (res.status !== 0) console.error('[serve] replit rebuild failed; starting anyway with the existing build');
+}
+
 function startChild() {
   child = spawn(
     'pnpm',
@@ -155,6 +183,8 @@ function startChild() {
       'exec',
       'vite',
       'preview',
+      '--config',
+      REPLIT_VITE_CONFIG,
       '--host',
       '127.0.0.1',
       '--port',
@@ -327,6 +357,7 @@ server.requestTimeout = 0;
 server.headersTimeout = 0;
 
 applySchemaIfEmpty(mainDbPath());
+ensureReplitBuild();
 startChild();
 await waitReady();
 server.listen(PORT, '0.0.0.0', () => {

@@ -11,7 +11,8 @@
     "deploy": "react-router build && node ../../scripts/wrangler-render.mjs build/server/wrangler.json && wrangler deploy --config build/server/wrangler.deploy.json",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "wrangler types && react-router typegen && tsc -b",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "build:replit": "vite build --config vite.config.replit.mts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.73",
