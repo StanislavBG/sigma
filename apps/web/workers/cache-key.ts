@@ -2,6 +2,7 @@
 export const CACHE_QUERY_PARAMS = new Set([
   'authority',
   'bidder',
+  'bids',
   'center',
   'count',
   'cursor',
