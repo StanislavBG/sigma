@@ -150,7 +150,12 @@ function AngleSwitch({ angle, hrefFor }: { angle: Angle; hrefFor: (a: Angle) => 
   return (
     <div className="ov-seg ov-switch" role="group" aria-label="Ъгъл на гледане">
       {ANGLES.map((a) => (
-        <Link key={a.key} to={hrefFor(a.key)} preventScrollReset aria-current={angle === a.key || undefined}>
+        <Link
+          key={a.key}
+          to={hrefFor(a.key)}
+          preventScrollReset
+          aria-current={angle === a.key || undefined}
+        >
           {a.label}
         </Link>
       ))}
@@ -905,8 +910,7 @@ function TrendsOverview({ loaderData }: { loaderData: OverviewData }) {
   const chips: { label: string; clear: Record<string, string | null> }[] = [];
   if (cpv) chips.push({ label: `CPV ${cpv}`, clear: { cpv: null } });
   if (year) chips.push({ label: year, clear: { year: null } });
-  const lensHint =
-    angle === 'cpv' ? 'кликни CPV ред, за да филтрираш' : 'избери година и CPV код';
+  const lensHint = angle === 'cpv' ? 'кликни CPV ред, за да филтрираш' : 'избери година и CPV код';
 
   const scopeParts: string[] = [];
   if (cpv) scopeParts.push(`CPV ${cpv}`);

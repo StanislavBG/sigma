@@ -104,7 +104,9 @@ function execWranglerD1File(file, attempt = 1) {
   const combined = `${result.stdout || ''}${result.stderr || ''}`;
   if (attempt < 5 && LOCK_ERROR_PATTERN.test(combined)) {
     const delayMs = 1500 * attempt;
-    console.log(`==> transient D1 lock on ${basename(file)} (attempt ${attempt}); retrying in ${delayMs}ms`);
+    console.log(
+      `==> transient D1 lock on ${basename(file)} (attempt ${attempt}); retrying in ${delayMs}ms`,
+    );
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
     return execWranglerD1File(file, attempt + 1);
   }
