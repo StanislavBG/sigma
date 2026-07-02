@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CPV_SECTORS } from '@sigma/config';
 import {
-<<<<<<< HEAD
-  companyListParams,
+  authorityListFilters,
+  companyListFilters,
+  contractListFilters,
   getMulti,
   leaderboardRankOffset,
   MAX_MULTI_VALUES,
@@ -10,14 +11,6 @@ import {
 } from './filters';
 
 const sp = (q: string) => new URLSearchParams(q);
-=======
-  authorityListFilters,
-  companyListFilters,
-  contractListFilters,
-  getMulti,
-  leaderboardRankOffset,
-  MAX_MULTI_VALUES,
-} from './filters';
 
 describe('contractListFilters', () => {
   it('parses the bids filter the HTML list and CSV export must share (issue #138)', () => {
@@ -72,7 +65,6 @@ describe('companyListFilters', () => {
     expect(companyListFilters(new URLSearchParams('sort=bogus')).sort).toBe('won');
   });
 });
->>>>>>> fork/fix/contracts-csv-bids-filter
 
 describe('getMulti', () => {
   it('caps repeated and CSV multi-value params', () => {

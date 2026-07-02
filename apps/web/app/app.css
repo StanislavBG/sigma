@@ -3502,10 +3502,6 @@ a.pa-card-cpv:focus-visible {
 .network-svg a:focus-visible {
   outline: none;
 }
-<<<<<<< HEAD
-=======
-/* Edge-label toggle (pure CSS, no JS): unchecked hides every .edge-label. */
->>>>>>> fork/feat/network-force-layout
 /* Controls row above the graph: the edge-value toggle plus, once you've browsed to another node,
    the Open / Reset actions. Wraps on narrow screens. */
 .net-controls {
@@ -3515,10 +3511,7 @@ a.pa-card-cpv:focus-visible {
   gap: 8px 16px;
   margin: 0 0 8px;
 }
-<<<<<<< HEAD
 /* Edge-label toggle (pure CSS, no JS): unchecked hides every .edge-label. */
-=======
->>>>>>> fork/feat/network-force-layout
 .net-toggle {
   display: inline-flex;
   align-items: center;
