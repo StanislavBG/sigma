@@ -1,6 +1,7 @@
 // Keep this allow-list in sync with query params consumed by apps/web/app/routes loaders.
 export const CACHE_QUERY_PARAMS = new Set([
   'a', // /compare — entity A slug
+  'angle', // /trends: time | cpv | cross lens
   'authority',
   'b', // /compare — entity B slug
   'bidder',
@@ -8,12 +9,16 @@ export const CACHE_QUERY_PARAMS = new Set([
   'by', // /overruns — sort dimension (absolute | percent)
   'center',
   'cohort', // /price-anomaly — selected CPV cohorts (repeatable); faceting changes the result set
+  'contract', // /quality: scorecard subject
   'count',
-  'cpv', // /contracts — exact 5-digit CPV filter; changes the result set + headline totals
+  'cpv', // /contracts — exact 5-digit CPV filter; ALSO /trends: 5-digit CPV group lens filter
+  'cpvSort', // /trends: CPV list ordering
+  'csort', // /quality: contract list ordering
   'cursor',
   'eu',
   'funding',
-  'g',
+  'g', // /network: graph-only re-centre loader reads ?g=1 — do NOT drop even though /trends moved to `step`
+  'grain', // /quality: rollup grain (authority|supplier|sector|region|year|funding)
   'kind',
   'metric', // /compare leaderboard dimension
   'p',
@@ -21,8 +26,11 @@ export const CACHE_QUERY_PARAMS = new Set([
   'procedure',
   'q',
   'sector',
+  'sel', // /quality: selected ranking row scoping the contract list
   'sort',
-  'top',
+  'step', // reserved for /trends server-side series granularity (m|q|y); the dashboard's step toggle is client-side today
+
+  'top', // singleSelectFilters: top-20 vs top-50 on /flows and /competition
   'type',
   'value',
   'year',

@@ -6,6 +6,7 @@ import {
   getOpaqueShareByYear,
   getOverrunsHeadline,
   getPriceAnomalyKpis,
+  getQualitySummary,
   getRegionHeadline,
   getSpendingTrend,
 } from '@sigma/db';
@@ -32,7 +33,7 @@ export function meta({ matches }: Route.MetaArgs) {
     path: '/analytics',
     title: 'Анализи — СИГМА',
     description:
-      'Шест аналитични изгледа към едни и същи обществени поръчки: раздуване след анекси, потоци на парите, карта по области, тренд във времето, конкуренция на процедурите и аномални цени спрямо сходни поръчки — всеки води обратно към конкретните договори.',
+      'Седем аналитични изгледа към едни и същи обществени поръчки: раздуване след анекси, потоци на парите, карта по области, тренд във времето, конкуренция на процедурите, аномални цени спрямо сходни поръчки и индекс на качеството — всеки води обратно към конкретните договори.',
   });
 }
 
@@ -40,27 +41,30 @@ export function headers() {
   return { 'Cache-Control': publicCache(1800) };
 }
 
-// Six lean, bounded rollup reads — one per landing card — in a single Promise.all (edge-cached
+// Seven lean, bounded rollup reads — one per landing card — in a single Promise.all (edge-cached
 // 1800s). Query budget: getOverrunsHeadline (1) + getFlowsHeadline (1) + getRegionHeadline (1) +
 // getSpendingTrend month series (3: series + coverage + as_of) + getOpaqueShareByYear (1) +
-// getPriceAnomalyKpis (1) + getCohortOutliers top-1 (1) = 9 statements per cold load. The derivations
-// (avg YoY, peak month, opaque headline, top mult) are pure helpers over the already-fetched rows.
+// getPriceAnomalyKpis (1) + getCohortOutliers top-1 (1) + getQualitySummary (1) = 10 statements per
+// cold load. The derivations (avg YoY, peak month, opaque headline, top mult) are pure helpers over
+// the already-fetched rows.
 export async function loader({ context }: Route.LoaderArgs) {
   const db = context.cloudflare.env.DB;
-  const [overruns, flows, region, trend, opaque, anomalyKpis, topOutlier] = await Promise.all([
-    getOverrunsHeadline(db),
-    getFlowsHeadline(db),
-    getRegionHeadline(db),
-    getSpendingTrend(
-      db,
-      { funding: 'all', granularity: 'month' },
-      { includeSectors: false, includeInsights: false },
-    ),
-    getOpaqueShareByYear(db),
-    getPriceAnomalyKpis(db),
-    // The single most-deviant flagged contract — its ×median is the card's „МАКС. ОТКЛОНЕНИЕ" KPI.
-    getCohortOutliers(db, { limit: 1 }),
-  ]);
+  const [overruns, flows, region, trend, opaque, anomalyKpis, topOutlier, quality] =
+    await Promise.all([
+      getOverrunsHeadline(db),
+      getFlowsHeadline(db),
+      getRegionHeadline(db),
+      getSpendingTrend(
+        db,
+        { funding: 'all', granularity: 'month' },
+        { includeSectors: false, includeInsights: false },
+      ),
+      getOpaqueShareByYear(db),
+      getPriceAnomalyKpis(db),
+      // The single most-deviant flagged contract — its ×median is the card's „МАКС. ОТКЛОНЕНИЕ" KPI.
+      getCohortOutliers(db, { limit: 1 }),
+      getQualitySummary(db).catch(() => null), // the quality tables land with the next full derive
+    ]);
 
   const peak = peakPoint(trend.points);
   // Canonical YoY growth — the SAME helper /trends uses (3-year trailing median, clamped) over the
@@ -77,6 +81,7 @@ export async function loader({ context }: Route.LoaderArgs) {
       cohortCount: anomalyKpis.cohortCount,
       topMult: topOutlier[0]?.mult ?? null,
     },
+    quality,
   };
 }
 
@@ -323,8 +328,31 @@ function ThumbPriceAnomaly() {
   );
 }
 
+function ThumbQuality() {
+  // Five dimension bars converging into a single accent score dot — the five [0,1] dimensions folded
+  // into one 0–100 index. Static, representative geometry; the KPI figures carry the real numbers.
+  const bars = [104, 148, 84, 128, 62];
+  return (
+    <svg className="az-thumb" viewBox="0 0 320 168" focusable="false">
+      {bars.map((w, i) => (
+        <rect
+          key={i}
+          className={i === 4 ? 'az-fill-accent' : 'az-fill-ink az-thumb-soft'}
+          x="26"
+          y={26 + i * 26}
+          width={w}
+          height="12"
+          rx="2"
+        />
+      ))}
+      <line className="az-stroke-ink az-thumb-dash" x1="226" y1="20" x2="226" y2="148" />
+      <circle className="az-fill-accent" cx="226" cy="84" r="10" />
+    </svg>
+  );
+}
+
 export default function Analytics({ loaderData }: Route.ComponentProps) {
-  const { overruns, flows, region, trend, opaque, anomaly } = loaderData;
+  const { overruns, flows, region, trend, opaque, anomaly, quality } = loaderData;
 
   return (
     <>
@@ -496,6 +524,39 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
                 },
               ]}
               thumb={<ThumbPriceAnomaly />}
+            />
+
+            <AnalyzeCard
+              index="07"
+              category="ЗДРАВЕ НА ПРОЦЕСА"
+              to="/quality"
+              titlePre="Индекс на "
+              titleEm="качеството"
+              desc="Колко здрав е процесът по всеки договор — пет измерения (конкуренция, прозрачност, изпълнение, концентрация, документация), една оценка 0–100."
+              cta="Виж индекса"
+              stats={[
+                {
+                  value:
+                    quality && quality.scoredContracts > 0 && quality.avgOverall != null
+                      ? `${Math.round(quality.avgOverall * 100)}/100`
+                      : '—',
+                  label: 'СРЕДЕН ИНДЕКС',
+                  accent: true,
+                  summary:
+                    'Средният индекс на качеството за всички оценени договори — 0 е най-слаб процес, 100 е най-здрав.',
+                  hint: 'Нисък индекс е сигнал за преглед, не доказателство за нарушение.',
+                },
+                {
+                  value:
+                    quality && quality.totalContracts > 0
+                      ? pct(quality.scoredContracts / quality.totalContracts)
+                      : '—',
+                  label: 'ОЦЕНЕНИ ДОГОВОРИ',
+                  summary:
+                    'Дял на договорите с достатъчно данни за оценка от всички договори в корпуса.',
+                },
+              ]}
+              thumb={<ThumbQuality />}
             />
           </div>
 

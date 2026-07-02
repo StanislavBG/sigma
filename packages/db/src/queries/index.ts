@@ -19,6 +19,7 @@ export * from './competition';
 export * from './overruns';
 export * from './price-anomaly';
 export * from './compare';
+export * from './quality';
 export * from './search';
 export * from './details';
 export * from './sitemaps';
