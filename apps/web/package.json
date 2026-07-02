@@ -14,15 +14,18 @@
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.73",
     "@sigma/api-contract": "workspace:*",
     "@sigma/config": "workspace:*",
     "@sigma/db": "workspace:*",
     "@sigma/shared": "workspace:*",
+    "ai": "^6.0.208",
     "d3-drag": "^3.0.0",
     "d3-force": "^3.0.0",
     "d3-selection": "^3.0.0",
     "d3-zoom": "^3.0.0",
     "isbot": "^5.1.36",
+    "node-sql-parser": "^5.4.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router": "7.15.1"

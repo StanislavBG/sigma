@@ -4,13 +4,9 @@
 // comes from authorities.region (OCDS NUTS, ~half of authorities), so we always split out an
 // "unattributed" bucket and report coverage; the 28 regions are zero-filled so the map colours all of them.
 
-import type {
-  MacroRegionSpend,
-  RegionSpend,
-  RegionalSpending,
-  SectorRef,
-} from '@sigma/api-contract';
-import { BG_REGIONS, CPV_SECTORS, regionByName } from '@sigma/config';
+import type { MacroRegionSpend, RegionSpend, RegionalSpending } from '@sigma/api-contract';
+import { BG_REGIONS, regionByName } from '@sigma/config';
+import { sectorOptions } from './sectors';
 
 export interface RegionalParams {
   sector?: string | null;
