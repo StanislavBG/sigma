@@ -129,6 +129,12 @@ describe('cacheKey', () => {
     expect(
       cacheUrl('http://local/quality?year=2024&sector=45&funding=eu&cursor=c1').search,
     ).not.toBe(base.search);
+    // ?band (histogram score-band click-filter) narrows the same list — distinct bands and the
+    // unfiltered view must each get their own entry.
+    expect(cacheUrl('http://local/quality?band=6').search).not.toBe(base.search);
+    expect(cacheUrl('http://local/quality?band=6').search).not.toBe(
+      cacheUrl('http://local/quality?band=weak').search,
+    );
   });
 
   it('keys the repeatable /trends CPV multi-select so faceted charts get their own entries (CWE-349)', () => {

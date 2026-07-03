@@ -420,6 +420,53 @@ describe('getQuality — contract facet filters', () => {
     expect(empty.contractsTotal).toBe(0);
   });
 
+  it('score-band filter narrows to the exact histogram bin (bounds match the overview bins)', async () => {
+    // Overall scores: c:1 .321 → bin 6 [.30,.35) · c:4 .563 → bin 11 [.55,.60) · c:2 .784 → bin 15.
+    const bin6 = await getQuality(d1, { filters: { band: '6' } });
+    expect(bin6.contracts.map((c) => c.id)).toEqual(['c:1']);
+    expect(bin6.contractsTotal).toBe(1);
+
+    const bin11 = await getQuality(d1, { filters: { band: '11' } });
+    expect(bin11.contracts.map((c) => c.id)).toEqual(['c:4']);
+    expect(bin11.contractsTotal).toBe(1);
+
+    // Adjacent empty bin: honest empty set, and the unscored c:3 never leaks into any band.
+    const bin7 = await getQuality(d1, { filters: { band: '7' } });
+    expect(bin7.contracts).toEqual([]);
+    expect(bin7.contractsTotal).toBe(0);
+
+    // Top bin closes at 1.0 inclusive (mirrors the `>= 1.0 → 19` histogram clause).
+    const bin19 = await getQuality(d1, { filters: { band: '19' } });
+    expect(bin19.contractsTotal).toBe(0);
+  });
+
+  it('named zone bands map to the page zones: weak [0,.5) · mid [.5,.7) · good [.7,1]', async () => {
+    const byBand = async (band: string) =>
+      (await getQuality(d1, { filters: { band } })).contracts.map((c) => c.id);
+    expect(await byBand('weak')).toEqual(['c:1']); // .321
+    expect(await byBand('mid')).toEqual(['c:4']); // .563
+    expect(await byBand('good')).toEqual(['c:2']); // .784
+  });
+
+  it('band composes with the other facets (AND) and with the sel scope', async () => {
+    const combo = await getQuality(d1, { filters: { year: '2024', band: 'weak' } });
+    expect(combo.contracts.map((c) => c.id)).toEqual(['c:1']);
+    expect(combo.contractsTotal).toBe(1);
+
+    // sel (authority Б → c:2, c:4) ∧ band=good → only c:2.
+    const scoped = await getQuality(d1, {
+      grain: 'authority',
+      sel: 'auth:100000002',
+      filters: { band: 'good' },
+    });
+    expect(scoped.contracts.map((c) => c.id)).toEqual(['c:2']);
+
+    // Disjoint composition → honest empty set.
+    const empty = await getQuality(d1, { filters: { funding: 'eu', band: 'good' } });
+    expect(empty.contracts).toEqual([]);
+    expect(empty.contractsTotal).toBe(0);
+  });
+
   it('drops malformed filter values at the query boundary instead of passing them into SQL', async () => {
     const { contracts, scope } = await getQuality(d1, {
       filters: {
@@ -427,10 +474,24 @@ describe('getQuality — contract facet filters', () => {
         sector: '4',
         funding: 'both' as never,
         conf: 'maximal' as never,
+        band: '20', // out of range — bins are 0–19
       },
     });
-    expect(scope.filters).toEqual({ year: null, sector: null, funding: null, conf: null });
+    expect(scope.filters).toEqual({
+      year: null,
+      sector: null,
+      funding: null,
+      conf: null,
+      band: null,
+    });
     expect(contracts).toHaveLength(4); // unfiltered — the bogus values never reached a WHERE
+
+    // More malformed band shapes: negative, fractional, SQL-ish, wrong name — all dropped.
+    for (const band of ['-1', '1.5', '6 OR 1=1', 'strong', '']) {
+      const r = await getQuality(d1, { filters: { band } });
+      expect(r.scope.filters.band).toBeNull();
+      expect(r.contractsTotal).toBe(4);
+    }
   });
 });
 

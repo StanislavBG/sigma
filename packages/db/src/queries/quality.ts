@@ -51,6 +51,7 @@ export const QUALITY_FILTER_KEYS = [
   'sector',
   'funding',
   'conf',
+  'band',
 ] as const satisfies readonly (keyof QualityContractFilters)[];
 assertCovers<QualityContractFilters, typeof QUALITY_FILTER_KEYS>();
 
@@ -310,6 +311,23 @@ function contractScope(
 
 // §6.2 confidence bands over (score_overall, score_coverage). 'none' = unrated: coverage-withheld
 // rows never reach this list, so within it score_overall IS NULL ⇔ value_suspect.
+/**
+ * Histogram score-band filter → [lo, hi) over score_overall. Bin index '0'–'19' maps to the exact
+ * 5-point bins the overview histogram is built from (bin 19 closes at 1.0 inclusive, mirroring the
+ * `score >= 1.0 → 19` clause in qualityOverview); 'weak'|'mid'|'good' map to the page's zone bands.
+ * Returns null for anything else — an unknown value must never reach SQL.
+ */
+export function qualityBandRange(band: string): { lo: number; hi: number | null } | null {
+  if (/^(?:[0-9]|1[0-9])$/.test(band)) {
+    const bin = Number(band);
+    return { lo: bin / 20, hi: bin === 19 ? null : (bin + 1) / 20 };
+  }
+  if (band === 'weak') return { lo: 0, hi: 0.5 };
+  if (band === 'mid') return { lo: 0.5, hi: 0.7 };
+  if (band === 'good') return { lo: 0.7, hi: null };
+  return null;
+}
+
 const CONF_WHERE: Record<QualityCoverageTier, string> = lookup({
   high: 'AND f.score_overall IS NOT NULL AND f.score_coverage >= 0.8',
   medium: 'AND f.score_overall IS NOT NULL AND f.score_coverage >= 0.6 AND f.score_coverage < 0.8',
@@ -335,6 +353,18 @@ function contractFacetWhere(flt: QualityContractFilters): { where: string; param
   if (flt.funding === 'eu') where.push('AND c.eu_funded = 1');
   else if (flt.funding === 'national') where.push('AND (c.eu_funded IS NULL OR c.eu_funded = 0)');
   if (flt.conf) where.push(CONF_WHERE[flt.conf]);
+  if (flt.band) {
+    const range = qualityBandRange(flt.band);
+    // NULL score_overall never satisfies >= — unscored contracts stay outside every band, not at 0.
+    if (range) {
+      where.push('AND f.score_overall >= ?');
+      params.push(range.lo);
+      if (range.hi != null) {
+        where.push('AND f.score_overall < ?');
+        params.push(range.hi);
+      }
+    }
+  }
   return { where: where.join(' '), params };
 }
 
@@ -413,6 +443,7 @@ function qualityContractSignature(
     sector: flt.sector,
     funding: flt.funding,
     conf: flt.conf,
+    band: flt.band,
   } satisfies Record<(typeof QUALITY_FILTER_KEYS)[number] | 'grain' | 'sel', unknown>);
 }
 
@@ -660,6 +691,7 @@ export async function getQuality(db: D1Database, p: QualityParams = {}): Promise
     funding:
       p.filters?.funding === 'eu' || p.filters?.funding === 'national' ? p.filters.funding : null,
     conf: p.filters?.conf && CONF_TIERS.includes(p.filters.conf) ? p.filters.conf : null,
+    band: p.filters?.band && qualityBandRange(p.filters.band) ? p.filters.band : null,
   };
   const minScored = grain === 'authority' || grain === 'supplier' ? MIN_SCORED : 1;
   const [overview, ranking, contracts, facets] = await Promise.all([

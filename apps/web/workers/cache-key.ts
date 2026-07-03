@@ -4,6 +4,7 @@ export const CACHE_QUERY_PARAMS = new Set([
   'angle', // /trends: time | cpv | cross lens
   'authority',
   'b', // /compare — entity B slug
+  'band', // /quality: histogram score-band filter on the contracts list — changes rows + totals (CWE-349)
   'bidder',
   'bids', // /contracts: c.bids_received = 1 — changes the result set and headline totals (CWE-349, #56)
   'by', // /overruns — sort dimension (absolute | percent)

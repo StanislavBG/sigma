@@ -117,12 +117,16 @@ export function companyListFilters(sp: URLSearchParams) {
 }
 
 const QUALITY_CONF_TIERS = new Set(['high', 'medium', 'low', 'none']);
+// ?band — histogram score-band filter: a bin index '0'–'19' (the 20 five-point bins) or a named
+// zone 'weak'|'mid'|'good'. Bounded + validated so it can't mint unbounded cache keys (CWE-349).
+const QUALITY_BAND = /^(?:[0-9]|1[0-9]|weak|mid|good)$/;
 
 export interface QualityListFilters {
   year: string | null;
   sector: string | null;
   funding: 'eu' | 'national' | null;
   conf: 'high' | 'medium' | 'low' | 'none' | null;
+  band: string | null;
   rankPage: number; // ?rpage — 1-based OFFSET page of the „Разбивка" rollup table
 }
 
@@ -139,12 +143,14 @@ export function qualityListFilters(sp: URLSearchParams): QualityListFilters {
   const sector = sp.get('sector');
   const funding = sp.get('funding');
   const conf = sp.get('conf');
+  const band = sp.get('band');
   const rpageRaw = Math.floor(Number(sp.get('rpage') ?? '1'));
   return {
     year: year && /^\d{4}$/.test(year) ? year : null,
     sector: sector && KNOWN_SECTORS.has(sector) ? sector : null,
     funding: funding === 'eu' || funding === 'national' ? funding : null,
     conf: conf && QUALITY_CONF_TIERS.has(conf) ? (conf as QualityListFilters['conf']) : null,
+    band: band && QUALITY_BAND.test(band) ? band : null,
     rankPage: Number.isFinite(rpageRaw) ? Math.min(Math.max(1, rpageRaw), 500) : 1,
   };
 }

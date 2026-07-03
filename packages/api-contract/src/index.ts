@@ -711,6 +711,7 @@ export interface QualityContractFilters {
   sector: string | null; // CPV division (2 digits)
   funding: 'eu' | 'national' | null;
   conf: QualityCoverageTier | null; // §6.2 coverage band; 'none' = unrated (score_overall IS NULL)
+  band: string | null; // histogram score band: bin index '0'–'19' (5-point bins) or 'weak'|'mid'|'good'
 }
 
 /** Facet option lists sourced from the small *_quality_totals rollups (never a corpus scan). */
