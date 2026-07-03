@@ -20,7 +20,7 @@ import { MetricInfo } from '../components/MetricInfo';
 import { Callout } from '../components/ui';
 import { publicCache } from '../lib/cache';
 import { cpvGroupSelection } from '../lib/filters';
-import { buildForecast, estimateYoyGrowth } from '../lib/trends-forecast';
+import { estimateYoyGrowth } from '../lib/analytics-stats';
 import {
   aggregate,
   combineSeries,
@@ -189,7 +189,7 @@ function AngleSwitch({ angle, hrefFor }: { angle: Angle; hrefFor: (a: Angle) => 
   );
 }
 
-// Default chart window: the most recent N years of actuals (plus the forecast tail).
+// Default chart window: the most recent N years of actuals.
 const CHART_TRAILING_YEARS = 5;
 
 const STEP_DEFS: { key: Step; label: string }[] = [
@@ -217,36 +217,33 @@ function TrendsDashboard({ loaderData }: { loaderData: DashboardData }) {
   const [step, setStep] = useState<Step>('month');
   const [activeYear, setActiveYear] = useState<number | null>(null);
 
-  // KPIs + coverage use the UNFILTERED actuals; the rendered line drops the partial as_of month.
+  // „Вкл. текущия месец": the current in-progress month is EXCLUDED from the chart by default (its
+  // half-filled value reads as a false dip); ?cur=1 opts back in. Strictly '1' so the edge-cache key
+  // space stays two-valued — the toggle changes the SSR-rendered chart, so `cur` is keyed (CWE-349).
+  const cur = sp.get('cur') === '1';
+  const curToggleHref = useMemo(() => {
+    const next = new URLSearchParams(sp);
+    if (cur) next.delete('cur');
+    else next.set('cur', '1');
+    const qs = next.toString();
+    return qs ? `?${qs}` : '/trends';
+  }, [sp, cur]);
+
+  // KPIs + coverage use the UNFILTERED actuals; the rendered series applies the partial-month filter.
   const kpis = useMemo(() => computeKpis(data.points), [data.points]);
   const growth = useMemo(() => estimateYoyGrowth(data.points), [data.points]);
-  const combined = useMemo(() => {
-    const forecast = buildForecast(data.points, growth);
-    return combineSeries(data.points, forecast);
-  }, [data.points, growth]);
-  // When the seasonal base is absent buildForecast returns [] — the band, the ПРОГНОЗА legend swatch
-  // and the methodology sentence below are all gated on this so we never describe an absent forecast.
-  const hasForecast = useMemo(() => combined.some((p) => p.forecast), [combined]);
+  const combined = useMemo(() => combineSeries(data.points, cur), [data.points, cur]);
+  const hasPartial = useMemo(() => combined.some((p) => p.partial), [combined]);
 
-  // The current in-progress month's real partial value — shown as the „до момента" marker beside the
-  // projection. Only in the default month view (periods map 1:1 with the chart's first-forecast slot).
-  const partialPoint = useMemo(() => data.points.find((p) => p.partial) ?? null, [data.points]);
-  const chartPartial =
-    !activeYear && step === 'month' && hasForecast && partialPoint
-      ? { valueEur: partialPoint.valueEur, contracts: partialPoint.contracts }
-      : null;
-
-  // Default chart view is the last CHART_TRAILING_YEARS of actuals + the forecast tail — the early
-  // ramp-up years (and any stray junk year) are trimmed so the curve reads cleanly. A year drill-down
-  // shows that single year in full.
+  // Default chart view is the last CHART_TRAILING_YEARS of actuals — the early ramp-up years (and any
+  // stray junk year) are trimmed so the curve reads cleanly. A year drill-down shows that single year
+  // in full.
   const windowed = useMemo(() => {
     if (activeYear) return combined;
-    const actualYears = combined
-      .filter((p) => !p.forecast)
-      .map((p) => Number(p.period.slice(0, 4)));
+    const actualYears = combined.map((p) => Number(p.period.slice(0, 4)));
     if (!actualYears.length) return combined;
     const minYear = Math.max(...actualYears) - (CHART_TRAILING_YEARS - 1);
-    return combined.filter((p) => p.forecast || Number(p.period.slice(0, 4)) >= minYear);
+    return combined.filter((p) => Number(p.period.slice(0, 4)) >= minYear);
   }, [combined, activeYear]);
 
   const display = useMemo(
@@ -313,7 +310,9 @@ function TrendsDashboard({ loaderData }: { loaderData: DashboardData }) {
   }, [chartFull]);
   const ariaLabel = `Разходи за обществени поръчки и брой договори по ${axisWord}${
     activeYear ? `, ${activeYear} г.` : ''
-  }. Колоните са броят договори, плътната линия е трендът на стойността, а пунктираният участък „ПРОГНОЗА" е сезонна прогноза. Точните стойности са в таблицата „По години" по-долу.`;
+  }. Колоните са броят договори, плътната линия е трендът на стойността${
+    hasPartial ? ', а пунктираната опашка е текущият незавършен период' : ''
+  }. Точните стойности са в таблицата „По години" по-долу.`;
 
   // Sub-meta for the "newest contracts" rail: the active sector scope, or all sectors.
   const sectorMeta = data.scope.sector
@@ -461,6 +460,14 @@ function TrendsDashboard({ loaderData }: { loaderData: DashboardData }) {
             hrefFor={(a) => (a === 'time' ? '/trends' : `/trends?angle=${a}`)}
           />
           {stepToggle}
+          <Link
+            to={curToggleHref}
+            preventScrollReset
+            className="trend-cur-toggle"
+            aria-current={cur || undefined}
+          >
+            вкл. текущия месец
+          </Link>
 
           <Form
             method="get"
@@ -488,6 +495,7 @@ function TrendsDashboard({ loaderData }: { loaderData: DashboardData }) {
                 <option value="national">Само без финансиране от ЕС</option>
               </select>
             </label>
+            {cur && <input type="hidden" name="cur" value="1" />}
             <noscript>
               <button type="submit">Покажи</button>
             </noscript>
@@ -575,7 +583,9 @@ function TrendsDashboard({ loaderData }: { loaderData: DashboardData }) {
                 <div className="trend-legend">
                   <LegendItem swatch={<Swatch box />}>договори</LegendItem>
                   <LegendItem swatch={<Swatch line />}>тренд €</LegendItem>
-                  {hasForecast && <LegendItem swatch={<Swatch dashed />}>прогноза</LegendItem>}
+                  {hasPartial && (
+                    <LegendItem swatch={<Swatch dashed />}>текущ (частичен)</LegendItem>
+                  )}
                   <span className="trend-legend-meta">{chartMeta}</span>
                   {!chartFull && (
                     <button
@@ -598,7 +608,6 @@ function TrendsDashboard({ loaderData }: { loaderData: DashboardData }) {
                     trendWindow={trendWindow}
                     barRatio={barRatio}
                     ariaLabel={ariaLabel}
-                    partial={chartPartial}
                   />
                 ) : (
                   <p className="muted trend-chart-empty">
@@ -760,18 +769,10 @@ function TrendsDashboard({ loaderData }: { loaderData: DashboardData }) {
         <Callout title="За покритието на данните">
           <p className="trend-callout-p">
             Графиката включва договорите с валидна дата на сключване ({pct(data.coverage.pct)} от
-            тях). Последният период е непълен и е изключен от трендовата линия
-            {chartPartial
-              ? ' — натрупаната му стойност е отбелязана отделно като маркера „до момента".'
-              : '.'}
-            {hasForecast && (
-              <>
-                {' '}
-                Участъкът „ПРОГНОЗА" е сезонна прогноза, изчислена от месечните данни (същият
-                календарен месец предходна година, умножен по типичния (медианен) годишен ръст{' '}
-                {growthTxt} за последните 3 пълни години) — не са реални договори.
-              </>
-            )}{' '}
+            тях).{' '}
+            {cur
+              ? 'Текущият месец е включен по избор („вкл. текущия месец") и е отбелязан като частичен — стойността му още се натрупва.'
+              : 'Текущият месец е непълен и по подразбиране е изключен от графиката — включи го с „вкл. текущия месец".'}{' '}
             Виж методологията за подробности.
           </p>
         </Callout>

@@ -1,10 +1,17 @@
-// Pure shaping of the trend series for the combo chart: combine actuals + forecast, roll months up
-// to the МЕСЕЧНО/ТРИМЕСЕЧНО/ГОДИШНО step (or down to a single clicked year), the centred moving
-// average for the bold trend line, and the headline KPIs. All deterministic and SSR-safe — the
-// component renders the same thing on the server and the client.
+// Pure shaping of the trend series for the combo chart: pick the rendered actuals (the current
+// partial period is excluded by default, opt-in via „вкл. текущия месец"), roll months up to the
+// МЕСЕЧНО/ТРИМЕСЕЧНО/ГОДИШНО step (or down to a single clicked year), the centred moving average for
+// the bold trend line, and the headline KPIs. All deterministic and SSR-safe — the component renders
+// the same thing on the server and the client.
 
 import type { TrendPoint } from '@sigma/api-contract';
-import type { SeriesPoint } from './trends-forecast';
+
+export interface SeriesPoint {
+  period: string; // 'YYYY-MM'
+  valueEur: number;
+  contracts: number;
+  partial: boolean; // the in-progress as_of month (only present when opted in)
+}
 
 export type Step = 'month' | 'quarter' | 'year';
 
@@ -30,7 +37,6 @@ export interface DisplayPoint {
   tick: string | null; // x-axis tick label, or null when this point carries no tick
   valueEur: number;
   contracts: number;
-  forecast: boolean; // the bucket contains projected (ПРОГНОЗА) months
   partial: boolean; // the bucket contains the partial as_of period
 }
 
@@ -45,32 +51,27 @@ const monthOf = (period: string): number => Number(period.slice(5, 7));
 const yearOf = (period: string): string => period.slice(0, 4);
 
 /**
- * Tag the actual points as non-forecast and concatenate the projected tail.
- *
- * The trailing partial as_of month(s) are dropped: their value is still being filled, so they read
- * as an understated dip on the solid trend line and — because `buildForecast` starts the projection
- * at the month after the last COMPLETE month — they otherwise collide with the first forecast point
- * (duplicate React key, double-counted and mis-flagged as forecast in the quarter/year buckets). The
- * forecast's leading month therefore REPLACES the partial month rather than duplicating it. Callers
- * keep the UNFILTERED actuals for `computeKpis`/coverage; only the rendered line excludes the partial.
+ * The rendered series: only real data. The trailing partial as_of month(s) are DROPPED by default —
+ * their value is still being filled, so they read as an understated dip on the solid trend line.
+ * `includeCurrent` (the „вкл. текущия месец" toggle, `?cur=1`) opts back in; the kept point stays
+ * flagged `partial` so the chart renders it in the partial style, never as a complete month. Callers
+ * keep the UNFILTERED actuals for `computeKpis`/coverage; only the rendered line applies this filter.
  */
-export function combineSeries(actual: TrendPoint[], forecast: SeriesPoint[]): SeriesPoint[] {
-  const a: SeriesPoint[] = actual
-    .filter((p) => !p.partial)
+export function combineSeries(actual: TrendPoint[], includeCurrent = false): SeriesPoint[] {
+  return actual
+    .filter((p) => includeCurrent || !p.partial)
     .map((p) => ({
       period: p.period,
       valueEur: p.valueEur,
       contracts: p.contracts,
-      forecast: false,
-      partial: false,
+      partial: p.partial,
     }));
-  return [...a, ...forecast];
 }
 
 /**
  * Roll the monthly series up to the requested step, or — when a year is clicked — down to that
- * year's months. Buckets accumulate value + count; a bucket is `forecast` if any of its months are
- * projected and `partial` if it contains the as_of period.
+ * year's months. Buckets accumulate value + count; a bucket is `partial` if it contains the as_of
+ * period.
  */
 export function aggregate(
   series: SeriesPoint[],
@@ -88,7 +89,6 @@ export function aggregate(
           tick: MONTHS_SHORT[m - 1] ?? null,
           valueEur: d.valueEur,
           contracts: d.contracts,
-          forecast: d.forecast,
           partial: d.partial,
         };
       });
@@ -104,7 +104,6 @@ export function aggregate(
         tick: m === 1 ? y : null, // a year label at each January
         valueEur: d.valueEur,
         contracts: d.contracts,
-        forecast: d.forecast,
         partial: d.partial,
       };
     });
@@ -125,7 +124,6 @@ export function aggregate(
           tick: q === 1 ? y : null,
           valueEur: 0,
           contracts: 0,
-          forecast: false,
           partial: false,
         };
         map.set(key, bucket);
@@ -133,7 +131,6 @@ export function aggregate(
       }
       bucket.valueEur += d.valueEur;
       bucket.contracts += d.contracts;
-      bucket.forecast = bucket.forecast || d.forecast;
       bucket.partial = bucket.partial || d.partial;
     }
     return order.map((k) => map.get(k)!);
@@ -152,7 +149,6 @@ export function aggregate(
         tick: y,
         valueEur: 0,
         contracts: 0,
-        forecast: false,
         partial: false,
       };
       map.set(y, bucket);
@@ -160,7 +156,6 @@ export function aggregate(
     }
     bucket.valueEur += d.valueEur;
     bucket.contracts += d.contracts;
-    bucket.forecast = bucket.forecast || d.forecast;
     bucket.partial = bucket.partial || d.partial;
   }
   return order.map((k) => map.get(k)!);
@@ -184,7 +179,7 @@ export function movingAverage(values: number[], window: number): number[] {
 }
 
 /**
- * Headline KPIs over the ACTUAL months only (never the forecast). Total + contract count mirror the
+ * Headline KPIs over the ACTUAL months. Total + contract count mirror the
  * site-wide value basis already used by the query; the peak is the highest-spend complete month, so
  * the partial as_of month's understated value can never masquerade as the peak.
  */

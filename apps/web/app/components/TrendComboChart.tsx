@@ -4,25 +4,24 @@ import { buildChartModel } from '../lib/trends-chart';
 import type { DisplayPoint } from '../lib/trends-series';
 
 // Dual-axis combo chart for the /trends dashboard, server-rendered (no chart JS, like SankeyDiagram):
-// contract-count bars on a right axis, a € area/line split into actual vs forecast, a bold moving-
-// average trend line, a peak marker and a dashed „ПРОГНОЗА" band. The accessible figures live in the
-// „По години" table beside it (role="img" + aria-label here); hover is pure client enhancement layered
-// over per-point hit boxes. (The simpler sparkline used by the entity/analytics embeds stays in
-// TrendChart.tsx — this is the full dashboard variant.)
+// contract-count bars on a right axis, a € area/line over the actuals (only real data — a dashed tail
+// marks the opted-in partial current month), a bold moving-average trend line and a peak marker. The
+// accessible figures live in the „По години" table beside it (role="img" + aria-label here); hover is
+// pure client enhancement layered over per-point hit boxes. (The simpler sparkline used by the
+// entity/analytics embeds stays in TrendChart.tsx — this is the full dashboard variant.)
 //
 // SVG presentation colours come through CSS custom properties (set on .trend-chart-wrap in app.css)
 // so the SVG stays themeable. This matches the design's chart palette exactly: the contract-count
 // measure is slate (--trend-count), the € line is tan (--trend-line), the trend is ink, and the
-// forecast/peak/hover are accent. Colour is never the sole encoder — each series also differs by shape
+// peak/hover are accent. Colour is never the sole encoder — each series also differs by shape
 // (bars vs solid vs dashed line), is named in the legend, and the figures live in the „По години"
 // table + the hover tooltip.
 
 const BAR_ACTUAL = 'rgb(var(--trend-count) / 0.52)';
-const BAR_FORECAST = 'rgb(var(--trend-count) / 0.26)';
+const BAR_PARTIAL = 'rgb(var(--trend-count) / 0.26)'; // faded — the in-progress month, still filling
 const BAR_HOVER = 'rgb(var(--trend-count) / 0.92)';
-const BAND_FILL = 'rgb(var(--trend-count) / 0.06)';
-const COUNT_INK = 'var(--trend-count-ink)'; // darker slate — count axis + ПРОГНОЗА label
-const EUR_LINE = 'var(--trend-line)'; // tan — actual/forecast € line
+const COUNT_INK = 'var(--trend-count-ink)'; // darker slate — count axis labels
+const EUR_LINE = 'var(--trend-line)'; // tan — € line
 const MONO = "'IBM Plex Mono', ui-monospace, monospace";
 
 // Phone widths render the default 760-unit viewBox at ~0.42× scale, which shrinks the in-SVG text to
@@ -50,15 +49,11 @@ export function TrendComboChart({
   trendWindow,
   barRatio,
   ariaLabel,
-  partial = null,
 }: {
   points: DisplayPoint[];
   trendWindow: number;
   barRatio: number;
   ariaLabel: string;
-  // The current in-progress period's REAL partial value — plotted as a „до момента" hollow marker
-  // beside the projection (month view only). Null = don't show it.
-  partial?: { valueEur: number; contracts: number } | null;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const compact = useCompactChart();
@@ -67,10 +62,9 @@ export function TrendComboChart({
       buildChartModel(points, {
         trendWindow,
         barRatio,
-        partial,
         dims: compact ? COMPACT_DIMS : undefined,
       }),
-    [points, trendWindow, barRatio, partial, compact],
+    [points, trendWindow, barRatio, compact],
   );
   // Scale the in-SVG font sizes on the compact canvas so they stay legible at phone widths.
   const fs = (v: number): number => (compact ? Math.round(v * COMPACT_FONT_SCALE * 10) / 10 : v);
@@ -107,39 +101,6 @@ export function TrendComboChart({
           </linearGradient>
         </defs>
 
-        {/* forecast band + "today" divider */}
-        {model.band && (
-          <>
-            <rect
-              x={model.band.x}
-              y={plotTop}
-              width={model.band.w}
-              height={plotBottom - plotTop}
-              style={{ fill: BAND_FILL }}
-            />
-            <line
-              x1={model.todayX!}
-              y1={plotTop}
-              x2={model.todayX!}
-              y2={plotBottom}
-              style={{ stroke: 'var(--accent)' }}
-              strokeWidth={1}
-              strokeDasharray="2 3"
-            />
-            <text
-              x={model.band.labelX}
-              y={model.band.labelY}
-              textAnchor="middle"
-              fontSize={fs(8.5)}
-              fontWeight={600}
-              letterSpacing="0.14em"
-              style={{ fill: COUNT_INK, fontFamily: MONO }}
-            >
-              ПРОГНОЗА
-            </text>
-          </>
-        )}
-
         {/* left € axis gridlines */}
         {model.gridLines.map((g, i) => (
           <g key={`grid-${i}`}>
@@ -170,15 +131,12 @@ export function TrendComboChart({
             y={b.y}
             width={b.w}
             height={b.h}
-            style={{ fill: hover === i ? BAR_HOVER : b.forecast ? BAR_FORECAST : BAR_ACTUAL }}
+            style={{ fill: hover === i ? BAR_HOVER : b.partial ? BAR_PARTIAL : BAR_ACTUAL }}
           />
         ))}
 
-        {/* € area + line, split actual / forecast */}
+        {/* € area + line over the complete months; dashed tail to the opted-in partial month */}
         <path d={model.actualArea} fill="url(#trendArea)" />
-        {model.forecastArea && (
-          <path d={model.forecastArea} fill="url(#trendArea)" opacity={0.45} />
-        )}
         <path
           d={model.actualLine}
           fill="none"
@@ -186,9 +144,9 @@ export function TrendComboChart({
           strokeWidth={1.1}
           strokeLinejoin="round"
         />
-        {model.forecastLine && (
+        {model.partialLine && (
           <path
-            d={model.forecastLine}
+            d={model.partialLine}
             fill="none"
             style={{ stroke: EUR_LINE }}
             strokeWidth={1.1}
@@ -245,7 +203,7 @@ export function TrendComboChart({
           </text>
         ))}
 
-        {/* x-axis ticks (forecast ticks read in a cooler muted slate) */}
+        {/* x-axis ticks */}
         {model.xTicks.map((t, i) => (
           <text
             key={`xt-${i}`}
@@ -253,10 +211,7 @@ export function TrendComboChart({
             y={height - 5}
             textAnchor="middle"
             fontSize={fs(9)}
-            style={{
-              fill: t.forecast ? 'var(--trend-xtick-fc)' : 'var(--ink-soft)',
-              fontFamily: MONO,
-            }}
+            style={{ fill: 'var(--ink-soft)', fontFamily: MONO }}
           >
             {t.label}
           </text>
@@ -280,23 +235,9 @@ export function TrendComboChart({
               fontWeight={600}
               style={{ fill: 'var(--accent)', fontFamily: MONO }}
             >
-              {peakValueLabel(points, model.firstForecastIndex)}
+              {peakValueLabel(points)}
             </text>
           </>
-        )}
-
-        {/* „до момента" marker: the current period's real partial value beside the projection */}
-        {model.partialMarker && (
-          <circle
-            cx={model.partialMarker.x}
-            cy={model.partialMarker.yValue}
-            r={3.4}
-            fill="none"
-            style={{ stroke: 'var(--accent)' }}
-            strokeWidth={1.5}
-          >
-            <title>до момента (текущ период)</title>
-          </circle>
         )}
 
         {/* hover crosshair + dot */}
@@ -347,20 +288,15 @@ export function TrendComboChart({
         >
           <div className="trend-tip-head">
             {hoverData.label}
-            {hoverData.forecast && <span className="trend-tip-badge">ПРОГНОЗА</span>}
+            {hoverData.partial && <span className="trend-tip-badge">ЧАСТИЧНО</span>}
           </div>
           <div className="trend-tip-row is-first">
             <span className="trend-tip-sw-line" />
-            <span className="trend-tip-label">{hoverData.forecast ? 'прогноза' : 'разходи'}</span>
+            <span className="trend-tip-label">
+              {hoverData.partial ? 'разходи до момента' : 'разходи'}
+            </span>
             <span className="trend-tip-val">{money(hoverData.valueEur)}</span>
           </div>
-          {partial && hover === model.firstForecastIndex && (
-            <div className="trend-tip-row">
-              <span className="trend-tip-sw-hollow" />
-              <span className="trend-tip-label">до момента</span>
-              <span className="trend-tip-val">{money(partial.valueEur)}</span>
-            </div>
-          )}
           <div className="trend-tip-row">
             <span className="trend-tip-sw-box" />
             <span className="trend-tip-label">договори</span>
@@ -372,12 +308,10 @@ export function TrendComboChart({
   );
 }
 
-// The € value at the peak marker — the highest complete (non-forecast) display point.
-function peakValueLabel(points: DisplayPoint[], firstForecastIndex: number): string {
-  const lim = firstForecastIndex || points.length;
+// The € value at the peak marker — the highest complete (non-partial) display point.
+function peakValueLabel(points: DisplayPoint[]): string {
   let peak: DisplayPoint | null = null;
-  for (let i = 0; i < lim; i += 1) {
-    const p = points[i]!;
+  for (const p of points) {
     if (!p.partial && (peak === null || p.valueEur > peak.valueEur)) peak = p;
   }
   return peak ? money(peak.valueEur) : '';
