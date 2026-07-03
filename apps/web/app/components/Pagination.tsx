@@ -20,7 +20,7 @@ export function Pagination({
       </div>
       <div className="ctrl">
         {nav.prevHref ? (
-          <Link to={nav.prevHref} rel="prev">
+          <Link to={nav.prevHref} rel="prev" preventScrollReset>
             ‹ Предишна
           </Link>
         ) : (
@@ -29,7 +29,7 @@ export function Pagination({
           </span>
         )}
         {nav.nextHref ? (
-          <Link to={nav.nextHref} rel="next">
+          <Link to={nav.nextHref} rel="next" preventScrollReset>
             Следваща ›
           </Link>
         ) : (

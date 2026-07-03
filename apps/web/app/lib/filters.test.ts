@@ -71,13 +71,19 @@ describe('companyListFilters', () => {
 
 describe('qualityListFilters', () => {
   it('parses the /quality facet set the loader consumes', () => {
-    const f = qualityListFilters(sp('year=2024&sector=45&funding=eu&conf=high&rpage=3'));
+    const f = qualityListFilters(
+      sp('year=2024&sector=45&funding=eu&conf=high&band=6&rpage=3&rdir=desc&rfrom=10&rto=60'),
+    );
     expect(f).toEqual({
       year: '2024',
       sector: '45',
       funding: 'eu',
       conf: 'high',
+      band: '6',
       rankPage: 3,
+      rankDir: 'desc',
+      rankFrom: 10,
+      rankTo: 60,
     });
   });
 
@@ -87,7 +93,11 @@ describe('qualityListFilters', () => {
       sector: null,
       funding: null,
       conf: null,
+      band: null,
       rankPage: 1,
+      rankDir: null,
+      rankFrom: null,
+      rankTo: null,
     });
   });
 
@@ -117,6 +127,36 @@ describe('qualityListFilters', () => {
     expect(qualityListFilters(sp('rpage=abc')).rankPage).toBe(1);
     expect(qualityListFilters(sp('rpage=2.9')).rankPage).toBe(2);
     expect(qualityListFilters(sp('rpage=99999')).rankPage).toBe(500);
+  });
+
+  it('accepts only asc|desc for ?rdir — anything else falls back to the default order', () => {
+    expect(qualityListFilters(sp('rdir=asc')).rankDir).toBe('asc');
+    expect(qualityListFilters(sp('rdir=desc')).rankDir).toBe('desc');
+    expect(qualityListFilters(sp('rdir=down')).rankDir).toBeNull();
+    expect(qualityListFilters(sp('rdir=DESC')).rankDir).toBeNull();
+    expect(qualityListFilters(sp("rdir=asc'--")).rankDir).toBeNull();
+  });
+
+  it('validates ?rfrom/?rto as ints in [0, 100] and drops malformed bounds (CWE-349)', () => {
+    expect(qualityListFilters(sp('rfrom=0&rto=100'))).toMatchObject({ rankFrom: 0, rankTo: 100 });
+    expect(qualityListFilters(sp('rfrom=35')).rankFrom).toBe(35); // one-sided range is fine
+    expect(qualityListFilters(sp('rto=35')).rankTo).toBe(35);
+    expect(qualityListFilters(sp('rfrom=101')).rankFrom).toBeNull();
+    expect(qualityListFilters(sp('rfrom=-1')).rankFrom).toBeNull();
+    expect(qualityListFilters(sp('rfrom=1.5')).rankFrom).toBeNull();
+    expect(qualityListFilters(sp('rfrom=abc')).rankFrom).toBeNull();
+    expect(qualityListFilters(sp('rfrom=5 OR 1=1')).rankFrom).toBeNull();
+    expect(qualityListFilters(sp('rfrom=1000')).rankFrom).toBeNull();
+  });
+
+  it('swaps an inverted ?rfrom/?rto pair so the range is always from ≤ to', () => {
+    const f = qualityListFilters(sp('rfrom=60&rto=10'));
+    expect(f.rankFrom).toBe(10);
+    expect(f.rankTo).toBe(60);
+    // from = to pins a single display value — kept, not dropped
+    const pin = qualityListFilters(sp('rfrom=69&rto=69'));
+    expect(pin.rankFrom).toBe(69);
+    expect(pin.rankTo).toBe(69);
   });
 });
 

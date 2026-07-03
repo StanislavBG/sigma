@@ -27,7 +27,10 @@ export const CACHE_QUERY_PARAMS = new Set([
   'page', // pagination offset — distinct pages must not share a cache entry
   'procedure',
   'q',
+  'rdir', // /quality: „Разбивка" ranking direction (asc|desc) — flips the rendered row order (CWE-349)
+  'rfrom', // /quality: „Разбивка" avg-index range lower bound — changes rows + totals (CWE-349)
   'rpage', // /quality: „Разбивка" ranking OFFSET page — distinct pages must not share a cache entry
+  'rto', // /quality: „Разбивка" avg-index range upper bound — changes rows + totals (CWE-349)
   'sector',
   'sel', // /quality: selected ranking row scoping the contract list
   'sort',

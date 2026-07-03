@@ -128,6 +128,9 @@ export interface QualityListFilters {
   conf: 'high' | 'medium' | 'low' | 'none' | null;
   band: string | null;
   rankPage: number; // ?rpage — 1-based OFFSET page of the „Разбивка" rollup table
+  rankDir: 'asc' | 'desc' | null; // ?rdir — ranking direction; null = the sort key's default
+  rankFrom: number | null; // ?rfrom/?rto — „Разбивка" avg-index range, ints 0–100 (from ≤ to)
+  rankTo: number | null;
 }
 
 /**
@@ -145,6 +148,15 @@ export function qualityListFilters(sp: URLSearchParams): QualityListFilters {
   const conf = sp.get('conf');
   const band = sp.get('band');
   const rpageRaw = Math.floor(Number(sp.get('rpage') ?? '1'));
+  const rdir = sp.get('rdir');
+  // ?rfrom/?rto — avg-index range bounds on the 0–100 display scale: digits-only ints ≤ 100, else
+  // dropped (no signs, decimals or SQL-ish shapes reach a query or a cache key — CWE-349).
+  const rangeInt = (raw: string | null): number | null =>
+    raw != null && /^\d{1,3}$/.test(raw) && Number(raw) <= 100 ? Number(raw) : null;
+  let rankFrom = rangeInt(sp.get('rfrom'));
+  let rankTo = rangeInt(sp.get('rto'));
+  if (rankFrom != null && rankTo != null && rankFrom > rankTo)
+    [rankFrom, rankTo] = [rankTo, rankFrom];
   return {
     year: year && /^\d{4}$/.test(year) ? year : null,
     sector: sector && KNOWN_SECTORS.has(sector) ? sector : null,
@@ -152,6 +164,9 @@ export function qualityListFilters(sp: URLSearchParams): QualityListFilters {
     conf: conf && QUALITY_CONF_TIERS.has(conf) ? (conf as QualityListFilters['conf']) : null,
     band: band && QUALITY_BAND.test(band) ? band : null,
     rankPage: Number.isFinite(rpageRaw) ? Math.min(Math.max(1, rpageRaw), 500) : 1,
+    rankDir: rdir === 'asc' || rdir === 'desc' ? rdir : null,
+    rankFrom,
+    rankTo,
   };
 }
 
@@ -262,6 +277,9 @@ const PARAM_ORDER = [
   'top',
   'count',
   'sort',
+  'rdir',
+  'rfrom',
+  'rto',
   'cursor',
   'page',
   'rpage',
