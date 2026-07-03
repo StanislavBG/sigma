@@ -188,6 +188,16 @@ describe('cacheKey', () => {
     );
   });
 
+  it('keys the /trends „вкл. текущия месец" toggle so the with-current chart gets its own entry (CWE-349)', () => {
+    // ?cur=1 renders the dashboard WITH the current partial month — a different chart, legend and
+    // coverage callout. It must never share a cached SSR body with the default view.
+    const base = cacheUrl('http://local/trends');
+    const withCurrent = cacheUrl('http://local/trends?cur=1');
+
+    expect(withCurrent.search).not.toBe(base.search);
+    expect(withCurrent.searchParams.get('cur')).toBe('1');
+  });
+
   it('keys response-affecting params so they cannot collapse to one cache entry (CWE-349, #56)', () => {
     // ?bids=1 narrows /contracts to single-bid contracts — different rows and totals.
     expect(cacheUrl('http://local/contracts?bids=1').search).not.toBe(
