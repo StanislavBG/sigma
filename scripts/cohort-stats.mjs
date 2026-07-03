@@ -139,7 +139,9 @@ export function computeCohorts(
       dated.push({ id: r.id, value: r.value, t });
     }
     // Sort by time (tiebreak value, then id) so the two-pointer window is deterministic.
-    dated.sort((a, b) => a.t - b.t || a.value - b.value || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    dated.sort(
+      (a, b) => a.t - b.t || a.value - b.value || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
 
     let outlierValueTotal = 0;
     let outlierCount = 0;

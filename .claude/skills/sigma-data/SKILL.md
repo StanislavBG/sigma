@@ -31,17 +31,17 @@ echo "SELECT * FROM data_freshness" | node .claude/skills/sigma-data/query.mjs
 The site serves **contracts** as the unit, aggregated up to **companies** (winning bidders) and
 **authorities** (institutions). Read-heavy pages hit precomputed rollups, not the base tables.
 
-| Table | What it is |
-|---|---|
-| `authorities` | Institutions (id = `auth:<EIK>`, `bulstat` = EIK, `type_group`, location) |
-| `bidders` | Companies/consortia (id = `eik:<EIK>` or `name:<slug>`, `bulstat` = raw EIK, `eik_normalized`, `ownership_kind`, `legal_form`) |
-| `tenders` / `lots` / `contracts` / `amendments` | Procurement base records (contracts carry `amount_eur`, `value_flag`, `eu_funded`, `signed_at`) |
-| `company_totals` | **Rollup** per company: `won_eur`, `contracts`, `authorities`, `primary_sector`, `eu_eur` — what the Companies leaderboard reads |
-| `authority_totals` | **Rollup** per authority: `spent_eur`, `contracts`, `suppliers`, `avg_eur` |
-| `home_totals` / `sector_totals` / `facet_counts` | Homepage + facet rollups |
-| `flow_pairs` | Authority→company money edges (the Flows / Sankey view; closest thing to a graph) |
-| `fx_rates` / `nuts_regions` / `data_freshness` | FX (ECB), region lookups, freshness watermark |
-| `company_enrichment` | **Added by the `sigma-enrich` skill** — CompanyBook/GLEIF/TED enrichment, joinable by EIK |
+| Table                                            | What it is                                                                                                                       |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `authorities`                                    | Institutions (id = `auth:<EIK>`, `bulstat` = EIK, `type_group`, location)                                                        |
+| `bidders`                                        | Companies/consortia (id = `eik:<EIK>` or `name:<slug>`, `bulstat` = raw EIK, `eik_normalized`, `ownership_kind`, `legal_form`)   |
+| `tenders` / `lots` / `contracts` / `amendments`  | Procurement base records (contracts carry `amount_eur`, `value_flag`, `eu_funded`, `signed_at`)                                  |
+| `company_totals`                                 | **Rollup** per company: `won_eur`, `contracts`, `authorities`, `primary_sector`, `eu_eur` — what the Companies leaderboard reads |
+| `authority_totals`                               | **Rollup** per authority: `spent_eur`, `contracts`, `suppliers`, `avg_eur`                                                       |
+| `home_totals` / `sector_totals` / `facet_counts` | Homepage + facet rollups                                                                                                         |
+| `flow_pairs`                                     | Authority→company money edges (the Flows / Sankey view; closest thing to a graph)                                                |
+| `fx_rates` / `nuts_regions` / `data_freshness`   | FX (ECB), region lookups, freshness watermark                                                                                    |
+| `company_enrichment`                             | **Added by the `sigma-enrich` skill** — CompanyBook/GLEIF/TED enrichment, joinable by EIK                                        |
 
 Join enrichment to the core data by EIK, e.g.:
 

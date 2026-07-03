@@ -6,14 +6,14 @@ description: Build up and maintain the Sigma database by enriching companies (by
 # sigma-enrich — build & maintain enrichment for Sigma entities
 
 Sigma's core data (companies/authorities/contracts) comes from storage.eop.bg and carries little
-about *who the companies are*. This skill enriches them, by **EIK**, from three free sources and
+about _who the companies are_. This skill enriches them, by **EIK**, from three free sources and
 writes an additive `company_enrichment` table that the `sigma-data` skill (and the app, if wired)
 can join to `bidders` / `company_totals`.
 
-| Source | Auth | Adds |
-|---|---|---|
-| **GLEIF** | none | LEI, legal form, validated address, status, ultimate parent (ownership graph) |
-| **TED** | none | count of EU notices naming the company (EU footprint, cross-border) |
+| Source          | Auth                               | Adds                                                                                                         |
+| --------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **GLEIF**       | none                               | LEI, legal form, validated address, status, ultimate parent (ownership graph)                                |
+| **TED**         | none                               | count of EU notices naming the company (EU footprint, cross-border)                                          |
 | **CompanyBook** | `X-API-Key` (free, verified email) | legal form, status, seat, capital, managers, partners/owners, NKID activity, subsidiaries, latest financials |
 
 GLEIF + TED always run (no auth). CompanyBook runs only if `COMPANYBOOK_API_KEY` is set **and the
@@ -44,12 +44,14 @@ node .claude/skills/sigma-data/query.mjs \
 ```
 
 ## Target selectors (pick one)
+
 - `--top N` — best-funded companies from `company_totals` (or computed from `contracts` if rollups are empty)
 - `--eik a,b,c` — explicit EIK list (`--name` improves TED/GLEIF matching for a single EIK)
 - `--from-json FILE` — array of `{eik, name}`
 - `--all-bidders [LIMIT]` — every bidder with a valid EIK
 
 ## Maintenance behaviour
+
 - **Idempotent UPSERT** on EIK; new non-null values fill in, `enriched_at` is bumped.
 - `--stale DAYS` (default 30) skips rows refreshed recently; `--force` re-fetches all.
 - Free-tier guards: `--cb-limit` (profiles, ≤100/day) and `--fin-limit` (financials, ≤30/day) cap
@@ -57,10 +59,11 @@ node .claude/skills/sigma-data/query.mjs \
 - `--dry-run` fetches and prints without writing.
 
 ## Notes / safety
+
 - The API key is read **only** from `COMPANYBOOK_API_KEY` — never hardcode or commit it.
 - Writes to the local D1 sqlite. If `pnpm dev` is running it holds the file; the script waits up to
   10s (busy_timeout). If you see lock errors, stop the dev server, enrich, then restart.
 - `company_enrichment` is created with `CREATE TABLE IF NOT EXISTS` and is **not** added to
   `packages/db/migrations` — it stays additive and never collides with the app's schema.
-- To also load real *core* procurement data first, use the project's own `pnpm import` (the EOP ETL);
+- To also load real _core_ procurement data first, use the project's own `pnpm import` (the EOP ETL);
   this skill enriches whatever companies exist, it does not replace the ETL.

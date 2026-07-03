@@ -78,7 +78,8 @@ describe('computeCohorts', () => {
   // One clean cohort, all signed the same day: 39 peers tightly around 10k + one obvious 1000× contract.
   function makeCohort() {
     const rows = [];
-    for (let i = 0; i < 39; i++) rows.push({ id: `c:${i}`, value: 9000 + (i % 7) * 300, signedAt: DAY });
+    for (let i = 0; i < 39; i++)
+      rows.push({ id: `c:${i}`, value: 9000 + (i % 7) * 300, signedAt: DAY });
     rows.push({ id: 'c:outlier', value: 10_000_000, signedAt: DAY }); // ~1000× the typical ~10k
     return new Map([['45000', rows]]);
   }
@@ -112,7 +113,10 @@ describe('computeCohorts', () => {
   it('excludes too-small and degenerate cohorts honestly', () => {
     const small = new Map([['00001', [{ id: 'a', value: 100, signedAt: DAY }]]]);
     const degenerate = new Map([
-      ['00002', Array.from({ length: 40 }, (_, i) => ({ id: `d:${i}`, value: 500, signedAt: DAY }))],
+      [
+        '00002',
+        Array.from({ length: 40 }, (_, i) => ({ id: `d:${i}`, value: 500, signedAt: DAY })),
+      ],
     ]);
     assert.equal(computeCohorts(small).stats.length, 0);
     assert.equal(computeCohorts(small).tooSmall, 1);
@@ -174,7 +178,8 @@ describe('computeCohorts', () => {
 
   it('excludes undated contracts from windowed detection but keeps them in the group total + median', () => {
     const rows = [];
-    for (let i = 0; i < 40; i++) rows.push({ id: `d:${i}`, value: 9000 + (i % 7) * 300, signedAt: DAY });
+    for (let i = 0; i < 40; i++)
+      rows.push({ id: `d:${i}`, value: 9000 + (i % 7) * 300, signedAt: DAY });
     rows.push({ id: 'u:1', value: 10_000_000, signedAt: null }); // undated giant — cannot be placed in time
     rows.push({ id: 'u:2', value: 20_000_000, signedAt: '' });
     const { stats, outliers, undated } = computeCohorts(new Map([['45000', rows]]));

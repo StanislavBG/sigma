@@ -12,14 +12,25 @@
 // The local D1 file is whatever `wrangler dev` / `pnpm run setup` created under .wrangler.
 
 // Silence node:sqlite's ExperimentalWarning (kept stderr clean for tool output).
-{ const e = process.emit; process.emit = function (n, w) { return n === 'warning' && w?.name === 'ExperimentalWarning' ? false : e.apply(process, arguments); }; }
+{
+  const e = process.emit;
+  process.emit = function (n, w) {
+    return n === 'warning' && w?.name === 'ExperimentalWarning'
+      ? false
+      : e.apply(process, arguments);
+  };
+}
 import { DatabaseSync } from 'node:sqlite';
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const argv = process.argv.slice(2);
-const flag = (n) => { const i = argv.indexOf(n); if (i === -1) return undefined; return argv[i + 1] ?? true; };
+const flag = (n) => {
+  const i = argv.indexOf(n);
+  if (i === -1) return undefined;
+  return argv[i + 1] ?? true;
+};
 const has = (n) => argv.includes(n);
 
 // repo root = three levels up from .claude/skills/sigma-data/
@@ -40,7 +51,11 @@ function resolveDb() {
 }
 
 function isReadOnly(sql) {
-  const s = sql.trim().replace(/^\((.*)\)$/s, '$1').trimStart().toUpperCase();
+  const s = sql
+    .trim()
+    .replace(/^\((.*)\)$/s, '$1')
+    .trimStart()
+    .toUpperCase();
   return /^(SELECT|WITH|PRAGMA|EXPLAIN)\b/.test(s);
 }
 
@@ -49,29 +64,47 @@ function table(rows) {
   const cols = Object.keys(rows[0]);
   const w = cols.map((c) => Math.max(c.length, ...rows.map((r) => String(r[c] ?? '').length)));
   const line = (cells) => cells.map((v, i) => String(v ?? '').padEnd(w[i])).join('  ');
-  return [line(cols), w.map((n) => '-'.repeat(n)).join('  '),
-    ...rows.map((r) => line(cols.map((c) => r[c])))].join('\n');
+  return [
+    line(cols),
+    w.map((n) => '-'.repeat(n)).join('  '),
+    ...rows.map((r) => line(cols.map((c) => r[c]))),
+  ].join('\n');
 }
 
 const dbPath = resolveDb();
 const db = new DatabaseSync(dbPath, { readOnly: true });
 
 if (has('--schema')) {
-  const ts = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf%' AND name NOT LIKE 'd1_%' ORDER BY name"
-  ).all().map((r) => r.name);
+  const ts = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf%' AND name NOT LIKE 'd1_%' ORDER BY name",
+    )
+    .all()
+    .map((r) => r.name);
   console.error(`db: ${dbPath}\n`);
   for (const t of ts) {
-    let c = '?'; try { c = db.prepare(`SELECT COUNT(*) c FROM "${t}"`).get().c; } catch {}
+    let c = '?';
+    try {
+      c = db.prepare(`SELECT COUNT(*) c FROM "${t}"`).get().c;
+    } catch {}
     console.log(String(c).padStart(8), t);
   }
   process.exit(0);
 }
 
-let sql = argv.filter((a) => !a.startsWith('--') && a !== flag('--db')).join(' ').trim();
+let sql = argv
+  .filter((a) => !a.startsWith('--') && a !== flag('--db'))
+  .join(' ')
+  .trim();
 if (!sql && !process.stdin.isTTY) sql = readFileSync(0, 'utf8').trim();
-if (!sql) { console.error('No SQL provided. See header of query.mjs for usage.'); process.exit(1); }
-if (!isReadOnly(sql)) { console.error('Refused: read-only skill. Only SELECT/WITH/PRAGMA/EXPLAIN allowed.'); process.exit(1); }
+if (!sql) {
+  console.error('No SQL provided. See header of query.mjs for usage.');
+  process.exit(1);
+}
+if (!isReadOnly(sql)) {
+  console.error('Refused: read-only skill. Only SELECT/WITH/PRAGMA/EXPLAIN allowed.');
+  process.exit(1);
+}
 
 try {
   const rows = db.prepare(sql).all();

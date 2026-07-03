@@ -165,13 +165,16 @@ function ensureReplitBuild() {
     needs = true; // no build at all
   }
   if (!needs) return;
-  console.log('[serve] build was made with remote-only bindings (or missing) — rebuilding with the Replit config…');
-  const res = spawnSync(
-    'pnpm',
-    ['--filter', '@sigma/web', 'run', 'build:replit'],
-    { cwd: root, stdio: 'inherit', env: process.env },
+  console.log(
+    '[serve] build was made with remote-only bindings (or missing) — rebuilding with the Replit config…',
   );
-  if (res.status !== 0) console.error('[serve] replit rebuild failed; starting anyway with the existing build');
+  const res = spawnSync('pnpm', ['--filter', '@sigma/web', 'run', 'build:replit'], {
+    cwd: root,
+    stdio: 'inherit',
+    env: process.env,
+  });
+  if (res.status !== 0)
+    console.error('[serve] replit rebuild failed; starting anyway with the existing build');
 }
 
 function startChild() {
