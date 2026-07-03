@@ -4812,25 +4812,6 @@ tbody td,
   padding: 7px 11px;
   cursor: pointer;
 }
-/* „вкл. текущия месец" — a chip-styled link toggling ?cur=1; aria-current marks the on state. */
-.trend-cur-toggle {
-  font:
-    500 10px/1 'IBM Plex Mono',
-    var(--font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 7px 11px;
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  background: var(--paper-raised);
-  color: var(--ink-mid);
-  text-decoration: none;
-}
-.trend-cur-toggle[aria-current] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper);
-}
 .trend-filter-form {
   display: flex;
   gap: 10px;
@@ -5169,12 +5150,13 @@ tbody td,
   position: relative;
   width: 100%;
   /* the design's chart palette — the count series is slate, the € line is tan, the trend is ink, and
-     the peak/hover are accent. Kept as scoped custom props so the SVG (whose fill/stroke can't
+     the forecast/peak/hover are accent. Kept as scoped custom props so the SVG (whose fill/stroke can't
      take a class) inherits them. Slate is decorative here: every series is also shape- and legend-coded. */
-  --trend-count: 94 124 139; /* slate (rgb channels) — count bars */
-  --trend-count-ink: #5e7c8b; /* darker slate — count axis text */
-  --trend-line: #c4b79c; /* tan — € line */
+  --trend-count: 94 124 139; /* slate (rgb channels) — count bars + band */
+  --trend-count-ink: #5e7c8b; /* darker slate — count axis text + ПРОГНОЗА */
+  --trend-line: #c4b79c; /* tan — actual/forecast € line */
   --trend-grid: #e7dfcd; /* warm gridlines */
+  --trend-xtick-fc: #9aa7ae; /* forecast x-tick label */
 }
 .trend-svg {
   display: block;

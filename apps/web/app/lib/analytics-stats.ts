@@ -5,7 +5,6 @@
 // be tested in isolation (repo convention: no render tests). Every helper is honest about thin data:
 // a missing / non-finite input returns the em-dash, never a fabricated figure.
 
-import type { TrendPoint } from '@sigma/api-contract';
 import { signedPct } from '@sigma/shared';
 
 import { formatGrowthFactor } from './overruns-chart';
@@ -109,83 +108,4 @@ export function formatPpChange(deltaRatio: number | null | undefined): string {
   const points = Math.round(deltaRatio * 100);
   const sign = points > 0 ? '+' : points < 0 ? '−' : '';
   return `${sign}${Math.abs(points)} пр.п.`;
-}
-
-// ── Canonical YoY growth estimate ─────────────────────────────────────────────────────────────────
-// Shared by the /analytics landing card and the /trends dashboard meta line — both report the same
-// „ръст/год" figure derived from the same monthly actuals. (Previously lived in trends-forecast.ts;
-// the seasonal projection built on top of it was removed — the trend chart shows only real data.)
-
-export interface GrowthFactors {
-  value: number; // YoY multiplier for spend (1.0 = flat)
-  count: number; // YoY multiplier for contract count
-}
-
-// Guard against a single freak year producing an absurd growth figure. A real YoY ratio for national
-// procurement sits well inside this band; anything outside is treated as data noise and clamped.
-const MIN_GROWTH = 0.5;
-const MAX_GROWTH = 2;
-
-function clampGrowth(ratio: number): number {
-  if (!Number.isFinite(ratio) || ratio <= 0) return 1;
-  return Math.min(MAX_GROWTH, Math.max(MIN_GROWTH, ratio));
-}
-
-function median(xs: number[]): number {
-  if (xs.length === 0) return 1;
-  const s = [...xs].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
-}
-
-// The growth rate is estimated from a TRAILING window of the most recent complete years, not
-// the whole history. The early years of this corpus are the open-data feed's ramp-up (2020 → 2021 was
-// +258% as the backfill filled in) — reporting that one-off spike gives an absurdly aggressive figure
-// (~+57%/yr). A 3-year trailing window captures the genuine, sustainable recent rate (~+15%/yr in
-// 2023–25) and keeps the reported yearly-growth figure honest.
-const FORECAST_TRAILING_YEARS = 3;
-
-/**
- * Estimate the YoY growth multiplier (spend + contract count) from the actual monthly series.
- * Only complete years (12 non-partial months with a positive total) feed the estimate; the partial
- * final year and a partial first year are ignored so a half-year never skews the ratio. Of those, only
- * the last {@link FORECAST_TRAILING_YEARS} are used (the trailing window above) — and this trailing
- * window is what protects the figure from the early ramp-up years, not the median per se. The
- * factor is the median of the consecutive year ratios within the window; at the default 3-year window
- * there are only two ratios, so the median coincides with their mean (the median only adds robustness
- * once the window is widened past three years). Fewer than two complete years → flat.
- */
-export function estimateYoyGrowth(points: TrendPoint[]): GrowthFactors {
-  const byYear = new Map<
-    number,
-    { value: number; count: number; months: number; partial: boolean }
-  >();
-  for (const p of points) {
-    const y = Number(p.period.slice(0, 4));
-    const acc = byYear.get(y) ?? { value: 0, count: 0, months: 0, partial: false };
-    acc.value += p.valueEur;
-    acc.count += p.contracts;
-    acc.months += 1;
-    if (p.partial) acc.partial = true;
-    byYear.set(y, acc);
-  }
-  const complete = [...byYear.entries()]
-    .filter(([, v]) => v.months === 12 && !v.partial && v.value > 0)
-    .sort((a, b) => a[0] - b[0]);
-  if (complete.length < 2) return { value: 1, count: 1 };
-  // Only the last N complete years (the trailing window) drive the rate.
-  const recent = complete.slice(-FORECAST_TRAILING_YEARS);
-
-  const valueRatios: number[] = [];
-  const countRatios: number[] = [];
-  for (let i = 1; i < recent.length; i += 1) {
-    const prev = recent[i - 1]![1];
-    const cur = recent[i]![1];
-    if (prev.value > 0) valueRatios.push(cur.value / prev.value);
-    if (prev.count > 0) countRatios.push(cur.count / prev.count);
-  }
-  return {
-    value: clampGrowth(valueRatios.length ? median(valueRatios) : 1),
-    count: clampGrowth(countRatios.length ? median(countRatios) : 1),
-  };
 }

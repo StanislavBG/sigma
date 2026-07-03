@@ -21,7 +21,7 @@ import {
   opaqueHeadline,
   peakPoint,
 } from '../lib/analytics-stats';
-import { estimateYoyGrowth } from '../lib/analytics-stats';
+import { estimateYoyGrowth } from '../lib/trends-forecast';
 import { seoMeta } from '../lib/meta';
 
 export function meta({ matches }: Route.MetaArgs) {
@@ -239,7 +239,7 @@ function ThumbMap() {
 }
 
 function ThumbTrends() {
-  // Decorative thumbnail: area under a line with an accent peak dot (static, aria-hidden art).
+  // Area under an actual line, a dashed forecast tail, and an accent peak dot.
   return (
     <svg className="az-thumb" viewBox="0 0 320 168" focusable="false">
       <path

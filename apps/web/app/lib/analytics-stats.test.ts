@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TrendPoint } from '@sigma/api-contract';
 import {
-  estimateYoyGrowth,
   formatPeakMonth,
   formatPpChange,
   formatYearlyGrowth,
@@ -85,67 +83,5 @@ describe('opaqueHeadline / formatPpChange', () => {
     expect(formatPpChange(-0.03)).toBe('−3 пр.п.');
     expect(formatPpChange(0)).toBe('0 пр.п.');
     expect(formatPpChange(null)).toBe('—');
-  });
-});
-
-// Build a full calendar year of monthly points with a flat per-month value/count.
-function year(
-  y: number,
-  monthlyValue: number,
-  monthlyCount: number,
-  partial = false,
-): TrendPoint[] {
-  return Array.from({ length: 12 }, (_, i) => ({
-    period: `${y}-${String(i + 1).padStart(2, '0')}`,
-    valueEur: monthlyValue,
-    contracts: monthlyCount,
-    // mark the final month of the year partial when requested
-    partial: partial && i === 11,
-  }));
-}
-
-describe('estimateYoyGrowth', () => {
-  it('recovers the YoY growth factor from complete years', () => {
-    const points = [...year(2021, 100, 50), ...year(2022, 120, 55), ...year(2023, 144, 60.5)];
-    const g = estimateYoyGrowth(points);
-    expect(g.value).toBeCloseTo(1.2, 5); // 100 → 120 → 144
-    expect(g.count).toBeCloseTo(1.1, 5); // 50 → 55 → 60.5
-  });
-
-  it('ignores the partial final year', () => {
-    const points = [
-      ...year(2021, 100, 50),
-      ...year(2022, 120, 55),
-      ...year(2023, 999, 999, true), // partial → excluded from the estimate
-    ];
-    const g = estimateYoyGrowth(points);
-    expect(g.value).toBeCloseTo(1.2, 5);
-  });
-
-  it('returns a flat factor with fewer than two complete years', () => {
-    expect(estimateYoyGrowth(year(2023, 100, 50, true))).toEqual({ value: 1, count: 1 });
-  });
-
-  it('clamps an absurd ratio into the sane band', () => {
-    const points = [...year(2021, 1, 1), ...year(2022, 1000, 1000)];
-    const g = estimateYoyGrowth(points);
-    expect(g.value).toBeLessThanOrEqual(2);
-    expect(g.value).toBeGreaterThanOrEqual(0.5);
-  });
-
-  it('uses the median so an early corpus ramp-up year does not dominate the figure', () => {
-    // 2020 is the artificially-low open-data ramp-up year: a one-off +260% spike, then a steady ~+15%.
-    const points = [
-      ...year(2020, 10, 5),
-      ...year(2021, 36, 18), // +260% — the backfill artifact
-      ...year(2022, 41, 20), // +14%
-      ...year(2023, 47, 23), // +15%
-      ...year(2024, 54, 26), // +15%
-    ];
-    const g = estimateYoyGrowth(points);
-    // Endpoint CAGR / geometric mean would carry the spike forward at ~+52%/yr ((54/10)^(1/4)≈1.52);
-    // the median of the four ratios lands on the genuine sustainable ~+15%.
-    expect(g.value).toBeGreaterThan(1.1);
-    expect(g.value).toBeLessThan(1.25);
   });
 });
