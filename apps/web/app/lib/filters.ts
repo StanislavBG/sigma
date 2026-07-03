@@ -4,7 +4,14 @@
 
 import { CPV_CATEGORIES, CPV_SECTORS, categoryForDivision } from '@sigma/config';
 import type { EntityKind } from '@sigma/api-contract';
-import { normalizeAuthoritySort, normalizeCompanySort, normalizeContractSort } from '@sigma/db';
+import {
+  NETWORK_GRAPH_MAX,
+  authorityIdFromSlug,
+  bidderIdFromSlug,
+  normalizeAuthoritySort,
+  normalizeCompanySort,
+  normalizeContractSort,
+} from '@sigma/db';
 import type { CpvCategory } from '@sigma/config';
 import type { FilterCategory, FilterGroup, FilterOption } from '../components/FilterRail';
 
@@ -13,6 +20,7 @@ export const PAGE_SIZE = {
   companies: 25,
   authorities: 25,
   network: 25,
+  profile: 15, // entity-profile counterparties table (authority „Топ изпълнители" / company „Откъде печели")
   quality: 12, // card grid — divides evenly into the 2- and 3-column layouts
 } as const;
 export const MAX_MULTI_VALUES = 50;
@@ -54,6 +62,41 @@ export function cpvGroupSelection(sp: URLSearchParams): string[] {
   return Array.from(new Set(all))
     .filter((v) => /^\d{5}$/.test(v))
     .slice(0, MAX_CPV_GROUP_SELECTION);
+}
+
+// ── Profile „Мрежа" graph membership (?net) ──────────────────────────────────────────────────────
+
+/** Hard cap on ?net values — mirrors NETWORK_GRAPH_MAX in @sigma/db (the SQL IN-list bound). */
+export const NETWORK_SELECTION_MAX: number = NETWORK_GRAPH_MAX;
+
+const EIK_SLUG_RE = /^\d{9}(\d{4})?$/;
+
+/**
+ * The profile pages' graph-membership multi-select (`?net=<counterparty slug>` ×NETWORK_SELECTION_MAX,
+ * repeatable or CSV). Values are counterparty ROUTE SLUGS (company slugs on an authority profile,
+ * authority ЕИКs on a company profile): validated per kind, deduped, length-bounded, capped, and
+ * CANONICALLY SORTED so equal sets always share one URL/edge-cache key (CWE-349). Absent param =
+ * the default top-6 graph — byte-identical to the pre-feature page for cached URLs.
+ */
+export function networkSelection(
+  sp: URLSearchParams,
+  counterpartyKind: 'company' | 'authority',
+): { slugs: string[]; ids: string[] } {
+  const all = sp
+    .getAll('net')
+    .flatMap((v) => v.split(','))
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0 && v.length <= 80); // name-keyed company slugs are base64url; bound them
+  const slugs = Array.from(new Set(all))
+    .filter((v) =>
+      counterpartyKind === 'company' ? bidderIdFromSlug(v) != null : EIK_SLUG_RE.test(v),
+    )
+    .sort()
+    .slice(0, NETWORK_SELECTION_MAX);
+  const ids = slugs.map((s) =>
+    counterpartyKind === 'company' ? bidderIdFromSlug(s)! : authorityIdFromSlug(s),
+  );
+  return { slugs, ids };
 }
 
 /**
@@ -276,6 +319,7 @@ const PARAM_ORDER = [
   'bidder',
   'top',
   'count',
+  'net',
   'sort',
   'rdir',
   'rfrom',

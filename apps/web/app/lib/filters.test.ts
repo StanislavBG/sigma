@@ -9,6 +9,8 @@ import {
   MAX_CPV_GROUP_SELECTION,
   leaderboardRankOffset,
   MAX_MULTI_VALUES,
+  NETWORK_SELECTION_MAX,
+  networkSelection,
   pageNav,
   qualityListFilters,
 } from './filters';
@@ -412,5 +414,41 @@ describe('pageNav', () => {
       prevCursor: 'before:c',
     });
     expect(mid.nextHref).not.toBeNull();
+  });
+});
+
+describe('networkSelection', () => {
+  it('parses repeatable and CSV ?net company slugs into sorted slugs + domain ids', () => {
+    const { slugs, ids } = networkSelection(sp('net=200000002&net=200000001,200000003'), 'company');
+    expect(slugs).toEqual(['200000001', '200000002', '200000003']); // canonical sorted order
+    expect(ids).toEqual(['eik:200000001', 'eik:200000002', 'eik:200000003']);
+  });
+
+  it('accepts name-keyed company slugs (n + base64url) and rejects garbage', () => {
+    // 'n' + base64url('Фирма') — the reversible no-ЕИК slug from identity.ts.
+    const nameSlug = 'n0KTQuNGA0LzQsA';
+    const { slugs, ids } = networkSelection(sp(`net=${nameSlug}&net=abc!&net=12&net=`), 'company');
+    expect(slugs).toEqual([nameSlug]);
+    expect(ids).toEqual(['name:Фирма']);
+  });
+
+  it('validates authority slugs as ЕИК digits on a company profile', () => {
+    const { slugs, ids } = networkSelection(
+      sp('net=000000078&net=badslug&net=1234567890123&net=12345'),
+      'authority',
+    );
+    expect(slugs).toEqual(['000000078', '1234567890123']);
+    expect(ids).toEqual(['auth:000000078', 'auth:1234567890123']);
+  });
+
+  it(`dedupes and hard-caps at ${NETWORK_SELECTION_MAX} values`, () => {
+    const many = Array.from({ length: 12 }, (_, i) => `net=20000000${i}`).join('&');
+    const { slugs } = networkSelection(sp(`${many}&net=200000001`), 'company');
+    expect(slugs).toHaveLength(NETWORK_SELECTION_MAX);
+    expect(new Set(slugs).size).toBe(NETWORK_SELECTION_MAX);
+  });
+
+  it('returns empty (the default top-6 graph) when ?net is absent', () => {
+    expect(networkSelection(sp(''), 'company')).toEqual({ slugs: [], ids: [] });
   });
 });

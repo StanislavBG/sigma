@@ -1,9 +1,11 @@
 import { Link } from 'react-router';
-import { count, money, moneyBare, pct, periodRange, plural } from '@sigma/shared';
+import { count, money, pct, periodRange, plural } from '@sigma/shared';
 import {
+  NETWORK_GRAPH_DEFAULT,
   authorityIdFromSlug,
   getAuthority,
   getAuthoritySingleOffer,
+  getEntityCounterparties,
   getEntityNetwork,
   getSpendingTrend,
 } from '@sigma/db';
@@ -16,11 +18,14 @@ import { DataTable } from '../components/DataTable';
 import { TrendChart } from '../components/TrendChart';
 import { NetworkGraph } from '../components/NetworkGraph';
 import { ContractMiniTable } from '../components/ContractMiniTable';
+import { MetricInfo } from '../components/MetricInfo';
+import { ProfileCounterparties } from '../components/ProfileCounterparties';
 import { SingleOfferPortion } from '../components/SingleOfferPortion';
-import { ShareBar, Chip, Section } from '../components/ui';
+import { Chip, Section } from '../components/ui';
 import { publicCache } from '../lib/cache';
 import { coverageRange, getCoverageMeta } from '../lib/coverage';
 import { networkColumns, networkRows, trendYearColumns } from '../lib/entity-tables';
+import { NETWORK_SELECTION_MAX, PAGE_SIZE, networkSelection } from '../lib/filters';
 import { withDbRetry } from '../lib/retry';
 import { seoMeta } from '../lib/meta';
 
@@ -39,21 +44,38 @@ export function headers() {
   return { 'Cache-Control': publicCache(3600) };
 }
 
-export async function loader({ params, context }: Route.LoaderArgs) {
+export async function loader({ params, request, context }: Route.LoaderArgs) {
   const eik = params.eik;
   if (!eik?.trim()) throw new Response('Not Found', { status: 404 });
   const db = context.cloudflare.env.DB;
   const authorityId = authorityIdFromSlug(eik);
+  const sp = new URL(request.url).searchParams;
+  // ?net — explicit graph membership picked from the counterparties table (companies here).
+  // Absent = the default top-6 by value, identical to the parameterless page.
+  const selection = networkSelection(sp, 'company');
   return withDbRetry(async () => {
     const [authority, coverage, trend, network, competition] = await Promise.all([
       getAuthority(db, authorityId),
       getCoverageMeta(db),
       getSpendingTrend(db, { authorityId, granularity: 'month' }, { includeSectors: false }),
-      getEntityNetwork(db, { kind: 'authority', id: authorityId }, { includeCenterOptions: false }),
+      getEntityNetwork(
+        db,
+        { kind: 'authority', id: authorityId },
+        {
+          includeCenterOptions: false,
+          neighbors: selection.ids.length ? selection.ids : undefined,
+        },
+      ),
       getAuthoritySingleOffer(db, authorityId),
     ]);
     if (!authority) throw new Response('Not Found', { status: 404 });
-    return { authority, coverage, trend, network, competition };
+    // Reuses the COUNT(*) getEntityNetwork already ran — one keyset page, no second identical scan.
+    const counterparties = await getEntityCounterparties(
+      db,
+      { kind: 'authority', id: authorityId },
+      { cursor: sp.get('cursor'), pageSize: PAGE_SIZE.profile, total: network.counterpartyTotal },
+    );
+    return { authority, coverage, trend, network, competition, counterparties, selection };
   });
 }
 
@@ -170,7 +192,15 @@ export default function Authority({ loaderData }: Route.ComponentProps) {
 
         <Section
           id="network"
-          title="Мрежа"
+          title={
+            <>
+              Мрежа{' '}
+              <MetricInfo
+                title="Кой е в графа"
+                summary={`По подразбиране графът показва топ ${NETWORK_GRAPH_DEFAULT} контрагенти по обща стойност. От таблицата „Топ изпълнители" по-долу можеш да сменяш състава — до ${NETWORK_SELECTION_MAX} едновременно.`}
+              />
+            </>
+          }
           hint={
             <span>
               Най-силните преки връзки около институцията и по една следваща връзка за всеки
@@ -198,59 +228,23 @@ export default function Authority({ loaderData }: Route.ComponentProps) {
         <Section
           id="top-contractors"
           title="Топ изпълнители"
-          hint={`Подредени по общата сума, спечелена от ${a.name}. Колоната „Дял" показва каква част от парите отива при всеки изпълнител.`}
+          hint={`Подредени по общата сума, спечелена от ${a.name}. Колоната „Дял" показва каква част от парите отива при всеки изпълнител, а отметката вляво определя кой е в графа „Мрежа" по-горе.`}
         >
-          <div className="table-wrap tbl-cards">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">#</th>
-                  <th scope="col">Компания</th>
-                  <th scope="col" className="num">
-                    Спечелено (€)
-                  </th>
-                  <th scope="col" className="num">
-                    Договори
-                  </th>
-                  <th scope="col">Дял от общата сума</th>
-                </tr>
-              </thead>
-              <tbody>
-                {a.topContractors.map((co, i) => (
-                  <tr key={co.slug}>
-                    <td className="rank cell-rank" data-label="#">
-                      {i + 1}
-                    </td>
-                    <td className="cell-title" data-label="Компания">
-                      <Link to={`/companies/${co.slug}`}>{co.displayName}</Link>
-                      {co.kind === 'consortium' && (
-                        <>
-                          {' '}
-                          <Chip>обединение</Chip>
-                        </>
-                      )}
-                    </td>
-                    <td className="money" data-label="Спечелено (€)">
-                      {moneyBare(co.wonEur)}
-                    </td>
-                    <td className="money" data-label="Договори">
-                      {count(co.contracts)}
-                    </td>
-                    <td data-label="Дял">
-                      <ShareBar ratio={co.sharePct} warn={co.sharePct >= 0.8} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {a.moreContractors > 0 && (
-            <p className="small muted mt-s3">
-              <Link to={`/contracts?authority=${a.eik}`}>
-                … още {count(a.moreContractors)} изпълнители — виж всички договори →
-              </Link>
-            </p>
-          )}
+          <ProfileCounterparties
+            profileKind="authority"
+            page={loaderData.counterparties}
+            pageSize={PAGE_SIZE.profile}
+            totalEur={a.spentEur}
+            selection={loaderData.selection.slugs}
+            defaultSlugs={network.nodes.filter((n) => n.hop === 1).map((n) => n.slug)}
+            warnShare
+            entityHeader="Компания"
+            valueHeader="Спечелено (€)"
+            shareHeader="Дял от общата сума"
+          />
+          <p className="small muted mt-s3">
+            <Link to={`/contracts?authority=${a.eik}`}>виж всички договори →</Link>
+          </p>
         </Section>
 
         <div className="two-col">

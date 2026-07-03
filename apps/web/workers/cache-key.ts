@@ -23,6 +23,7 @@ export const CACHE_QUERY_PARAMS = new Set([
   'grain', // /quality: rollup grain (authority|supplier|sector|region|year|funding)
   'kind',
   'metric', // /compare leaderboard dimension
+  'net', // profile pages: repeatable graph-membership selection for the embedded „Мрежа" (CWE-349); also pages via the shared cursor/page keys
   'p',
   'page', // pagination offset — distinct pages must not share a cache entry
   'procedure',

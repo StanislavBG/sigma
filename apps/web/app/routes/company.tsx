@@ -1,14 +1,13 @@
 import { Link } from 'react-router';
+import { count, isNaturalPersonProfileName, money, pct, periodRange, plural } from '@sigma/shared';
 import {
-  count,
-  isNaturalPersonProfileName,
-  money,
-  moneyBare,
-  pct,
-  periodRange,
-  plural,
-} from '@sigma/shared';
-import { bidderIdFromSlug, getCompany, getEntityNetwork, getSpendingTrend } from '@sigma/db';
+  NETWORK_GRAPH_DEFAULT,
+  bidderIdFromSlug,
+  getCompany,
+  getEntityCounterparties,
+  getEntityNetwork,
+  getSpendingTrend,
+} from '@sigma/db';
 import type { Route } from './+types/company';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { PageHeader } from '../components/PageHeader';
@@ -18,10 +17,13 @@ import { DataTable } from '../components/DataTable';
 import { TrendChart } from '../components/TrendChart';
 import { NetworkGraph } from '../components/NetworkGraph';
 import { ContractMiniTable } from '../components/ContractMiniTable';
-import { ShareBar, Chip, OwnershipChip, Section, ExternalEikLink } from '../components/ui';
+import { MetricInfo } from '../components/MetricInfo';
+import { ProfileCounterparties } from '../components/ProfileCounterparties';
+import { Chip, OwnershipChip, Section, ExternalEikLink } from '../components/ui';
 import { publicCache } from '../lib/cache';
 import { coverageRange, getCoverageMeta } from '../lib/coverage';
 import { networkColumns, networkRows, trendYearColumns } from '../lib/entity-tables';
+import { NETWORK_SELECTION_MAX, PAGE_SIZE, networkSelection } from '../lib/filters';
 import { withDbRetry } from '../lib/retry';
 import { seoMeta } from '../lib/meta';
 
@@ -61,20 +63,37 @@ export function headers() {
   return { 'Cache-Control': publicCache(3600) };
 }
 
-export async function loader({ params, context }: Route.LoaderArgs) {
+export async function loader({ params, request, context }: Route.LoaderArgs) {
   if (!params.eik?.trim()) throw new Response('Not Found', { status: 404 });
   const id = bidderIdFromSlug(params.eik);
   if (!id) throw new Response('Not Found', { status: 404 });
   const db = context.cloudflare.env.DB;
+  const sp = new URL(request.url).searchParams;
+  // ?net — explicit graph membership picked from the counterparties table (authorities here).
+  // Absent = the default top-6 by value, identical to the parameterless page.
+  const selection = networkSelection(sp, 'authority');
   return withDbRetry(async () => {
     const [company, coverage, trend, network] = await Promise.all([
       getCompany(db, id),
       getCoverageMeta(db),
       getSpendingTrend(db, { bidderId: id, granularity: 'month' }, { includeSectors: false }),
-      getEntityNetwork(db, { kind: 'company', id }, { includeCenterOptions: false }),
+      getEntityNetwork(
+        db,
+        { kind: 'company', id },
+        {
+          includeCenterOptions: false,
+          neighbors: selection.ids.length ? selection.ids : undefined,
+        },
+      ),
     ]);
     if (!company) throw new Response('Not Found', { status: 404 });
-    return { company, coverage, trend, network };
+    // Reuses the COUNT(*) getEntityNetwork already ran — one keyset page, no second identical scan.
+    const counterparties = await getEntityCounterparties(
+      db,
+      { kind: 'company', id },
+      { cursor: sp.get('cursor'), pageSize: PAGE_SIZE.profile, total: network.counterpartyTotal },
+    );
+    return { company, coverage, trend, network, counterparties, selection };
   });
 }
 
@@ -188,7 +207,15 @@ export default function Company({ loaderData }: Route.ComponentProps) {
 
         <Section
           id="network"
-          title="Мрежа"
+          title={
+            <>
+              Мрежа{' '}
+              <MetricInfo
+                title="Кой е в графа"
+                summary={`По подразбиране графът показва топ ${NETWORK_GRAPH_DEFAULT} възложители по обща стойност. От таблицата „Откъде печели" по-долу можеш да сменяш състава — до ${NETWORK_SELECTION_MAX} едновременно.`}
+              />
+            </>
+          }
           hint={
             <span>
               Най-силните преки връзки около {subjectPhrase} и по една следваща връзка за всеки
@@ -257,56 +284,22 @@ export default function Company({ loaderData }: Route.ComponentProps) {
         <Section
           id="from"
           title="Откъде печели"
-          hint={`Институции, подредени по сумата, платена на ${c.displayName.replace(/\.$/, '')}.`}
+          hint={`Институции, подредени по сумата, платена на ${c.displayName.replace(/\.$/, '')}. Отметката вляво определя кой е в графа „Мрежа" по-горе.`}
         >
-          <div className="table-wrap tbl-cards">
-            <table>
-              <caption className="sr-only">
-                Институции платци, подредени по сумата, платена на компанията
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">#</th>
-                  <th scope="col">Институция</th>
-                  <th scope="col" className="num">
-                    Платено на компанията (€)
-                  </th>
-                  <th scope="col" className="num">
-                    Договори
-                  </th>
-                  <th scope="col">Дял от спечеленото</th>
-                </tr>
-              </thead>
-              <tbody>
-                {c.topAuthorities.map((a, i) => (
-                  <tr key={a.slug}>
-                    <td className="rank cell-rank" data-label="#">
-                      {i + 1}
-                    </td>
-                    <td className="cell-title" data-label="Институция">
-                      <Link to={`/authorities/${a.slug}`}>{a.name}</Link>
-                    </td>
-                    <td className="money" data-label="Платено (€)">
-                      {moneyBare(a.paidEur)}
-                    </td>
-                    <td className="money" data-label="Договори">
-                      {count(a.contracts)}
-                    </td>
-                    <td data-label="Дял">
-                      <ShareBar ratio={a.sharePct} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {c.moreAuthorities > 0 && (
-            <p className="small muted mt-s3">
-              <Link to={`/contracts?bidder=${c.slug}`}>
-                … още {count(c.moreAuthorities)} институции — виж всички договори →
-              </Link>
-            </p>
-          )}
+          <ProfileCounterparties
+            profileKind="company"
+            page={loaderData.counterparties}
+            pageSize={PAGE_SIZE.profile}
+            totalEur={c.wonEur}
+            selection={loaderData.selection.slugs}
+            defaultSlugs={network.nodes.filter((n) => n.hop === 1).map((n) => n.slug)}
+            entityHeader="Институция"
+            valueHeader="Платено на компанията (€)"
+            shareHeader="Дял от спечеленото"
+          />
+          <p className="small muted mt-s3">
+            <Link to={`/contracts?bidder=${c.slug}`}>виж всички договори →</Link>
+          </p>
         </Section>
 
         <div className="two-col">

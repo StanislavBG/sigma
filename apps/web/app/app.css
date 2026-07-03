@@ -7982,3 +7982,76 @@ tbody td,
   }
 }
 /* ===== end mobile ===== */
+
+/* ── Profile counterparties picker (ProfileCounterparties.tsx) ─────────────────────────────────
+   The „Топ изпълнители" / „Откъде печели" table doubles as the membership picker for the embedded
+   „Мрежа" graph. Roomier rows than the base table (design-scale tokens), a checkbox-style GET-link
+   toggle per row (the /trends CPV picker idiom), and a soft accent wash on picked rows. */
+.tbl-roomy tbody td {
+  padding-top: var(--s-4);
+  padding-bottom: var(--s-4);
+}
+.cell-pick {
+  width: 34px;
+}
+.net-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--rule);
+  border-radius: 3px;
+  text-decoration: none;
+  font: 700 11px/1 var(--font-mono);
+  color: var(--paper);
+}
+.net-pick:hover {
+  border-color: var(--accent);
+}
+.net-pick.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.net-pick.is-blocked {
+  border-style: dashed;
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+tr.is-picked td {
+  background: var(--accent-bg);
+}
+.net-pick-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  margin: 0 0 var(--s-3);
+}
+.net-reset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  font: 500 10.5px/1.2 var(--font-mono);
+  text-decoration: none;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+@media (pointer: coarse) {
+  /* ≥44px touch targets: keep the 18px visual box, extend the hit area invisibly. */
+  .net-pick {
+    position: relative;
+  }
+  .net-pick::after {
+    content: '';
+    position: absolute;
+    inset: -13px;
+  }
+  .net-reset-chip {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+}

@@ -167,6 +167,27 @@ describe('cacheKey', () => {
     );
   });
 
+  it('keys the profile pages’ repeatable ?net graph selection + pager (CWE-349)', () => {
+    // The embedded „Мрежа" graph renders exactly the ?net set and the counterparties table pages
+    // via cursor/page; distinct selections/pages must never share one cached SSR body.
+    const base = cacheUrl('http://local/authorities/000695235');
+    const one = cacheUrl('http://local/authorities/000695235?net=831641156');
+    const two = cacheUrl('http://local/authorities/000695235?net=831641156&net=121904799');
+
+    expect(one.search).not.toBe(base.search);
+    expect(two.search).not.toBe(one.search);
+    expect(two.searchParams.getAll('net')).toEqual(['831641156', '121904799']); // both values keyed
+    // Selection persists across pages: cursor/page key alongside net (already allow-listed).
+    expect(
+      cacheUrl('http://local/authorities/000695235?net=831641156&cursor=c2&page=2').search,
+    ).not.toBe(one.search);
+    // Like ?cpv, value order is not re-sorted here — the UI mints ?net pre-sorted (networkSelection)
+    // so equal sets share one canonical URL.
+    expect(cacheUrl('http://local/companies/831641156?net=000695235').search).not.toBe(
+      cacheUrl('http://local/companies/831641156').search,
+    );
+  });
+
   it('keys response-affecting params so they cannot collapse to one cache entry (CWE-349, #56)', () => {
     // ?bids=1 narrows /contracts to single-bid contracts — different rows and totals.
     expect(cacheUrl('http://local/contracts?bids=1').search).not.toBe(
