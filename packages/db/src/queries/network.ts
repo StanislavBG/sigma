@@ -22,10 +22,19 @@ export interface NetworkParams {
 
 export interface NetworkQueryOptions {
   includeCenterOptions?: boolean;
+  // Explicit hop-1 membership: draw exactly these counterparties (domain ids) instead of the
+  // top-NETWORK_GRAPH_DEFAULT by value. Callers pass a validated, deduped set; anything beyond
+  // NETWORK_GRAPH_MAX is dropped here as a hard bound (one IN-list read, never per-node queries).
+  neighbors?: string[];
 }
 
-const HOP1 = 6; // direct counterparties drawn in the graph (readability cap, not the real degree)
-const HOP2_SCAN = HOP1 * 10; // rows scanned for hop 2 before the top-1-per-neighbour reduction
+// Direct counterparties drawn in the graph by default (readability cap, not the real degree), and
+// the hard ceiling an explicit ?net selection may raise it to. Exported so the web layer's selection
+// parser and the UI cap hint stay in lockstep with the SQL bound.
+export const NETWORK_GRAPH_DEFAULT = 6;
+export const NETWORK_GRAPH_MAX = 8;
+const HOP1 = NETWORK_GRAPH_DEFAULT;
+const HOP2_SCAN_PER_NEIGHBOR = 10; // rows scanned for hop 2 per hop-1 node, before the top-1 reduction
 const PICKER_LIMIT = 12; // entities offered in the centre picker
 const COUNTERPARTY_PAGE_SIZE = 25; // rows per page in the exhaustive relations table
 
@@ -171,14 +180,22 @@ export async function getEntityNetwork(
   const centerCol = isAuth ? 'authority_id' : 'bidder_id';
   const neighborCol = isAuth ? 'bidder_id' : 'authority_id';
 
+  // Explicit hop-1 membership (profile-page selection): ONE bound IN-list read for the whole set —
+  // same row shape and ordering as the default top-N read, never a per-node query.
+  const selected = (options.neighbors ?? []).slice(0, NETWORK_GRAPH_MAX);
+  const hop1Sql = selected.length
+    ? `SELECT authority_id, bidder_id, authority_name, bidder_name, bidder_kind, won_eur, contracts
+       FROM flow_pairs WHERE ${centerCol} = ? AND ${neighborCol} IN (${selected.map(() => '?').join(', ')})
+       ORDER BY won_eur DESC, ${neighborCol} LIMIT ?`
+    : `SELECT authority_id, bidder_id, authority_name, bidder_name, bidder_kind, won_eur, contracts
+         FROM flow_pairs WHERE ${centerCol} = ? ORDER BY won_eur DESC, ${neighborCol} LIMIT ?`;
+  const hop1Binds = selected.length ? [p.id, ...selected, selected.length] : [p.id, HOP1];
+
   const [centerOptions, hop1res, totalRow] = await Promise.all([
     includeCenterOptions ? loadCenterOptions(db) : Promise.resolve(emptyCenterOptions()),
     db
-      .prepare(
-        `SELECT authority_id, bidder_id, authority_name, bidder_name, bidder_kind, won_eur, contracts
-         FROM flow_pairs WHERE ${centerCol} = ? ORDER BY won_eur DESC, ${neighborCol} LIMIT ?`,
-      )
-      .bind(p.id, HOP1)
+      .prepare(hop1Sql)
+      .bind(...hop1Binds)
       .all<PairRow>(),
     db
       .prepare(`SELECT COUNT(*) AS n FROM flow_pairs WHERE ${centerCol} = ?`)
@@ -214,7 +231,7 @@ export async function getEntityNetwork(
            FROM flow_pairs WHERE ${neighborCol} IN (${placeholders}) AND ${centerCol} != ?
            ORDER BY won_eur DESC, ${neighborCol}, ${centerCol} LIMIT ?`,
         )
-        .bind(...neighborIds, p.id, HOP2_SCAN)
+        .bind(...neighborIds, p.id, neighborIds.length * HOP2_SCAN_PER_NEIGHBOR)
         .all<PairRow>()
     ).results;
     const seenNeighbor = new Set<string>();
@@ -312,6 +329,7 @@ export async function getEntityCounterparties(
       authoritySlug: authoritySlug(r.authority_id),
       companyLabel: entityName(cleanName(r.bidder_name), r.bidder_kind),
       companySlug: companySlug(r.bidder_id),
+      companyKind: r.bidder_kind,
       valueEur: r.won_eur,
       contracts: r.contracts,
     })),

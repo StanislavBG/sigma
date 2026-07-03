@@ -84,14 +84,6 @@ export interface CompanyListItem {
   authorities: number;
 }
 
-export interface AuthorityShare {
-  slug: string;
-  name: string;
-  paidEur: number;
-  contracts: number;
-  sharePct: number; // 0–1 of the company's total won
-}
-
 /** Distribution of won tenders by number of bids received (`contracts.bids_received`, ~90% coverage). */
 export interface BidDistribution {
   one: number;
@@ -134,8 +126,6 @@ export interface CompanyDetail {
   periodFirst: string | null;
   periodLast: string | null;
   suspect: number; // own contracts excluded from sums (suspect value)
-  topAuthorities: AuthorityShare[];
-  moreAuthorities: number;
   procedureMix: ProcedureSlice[];
   bids: BidDistribution;
   /** Highest-value contracts (listContracts sort='value-desc', amount_eur DESC) — „Най-големи по стойност". */
@@ -164,16 +154,6 @@ export interface AuthorityListItem {
   avgEur: number;
 }
 
-export interface CompanyShare {
-  slug: string;
-  name: string;
-  displayName: string;
-  kind: EntityKind;
-  wonEur: number;
-  contracts: number;
-  sharePct: number; // 0–1 of the authority's total spent
-}
-
 export interface SectorSpend {
   code: string;
   label: string;
@@ -199,8 +179,6 @@ export interface AuthorityDetail {
   periodFirst: string | null;
   periodLast: string | null;
   suspect: number;
-  topContractors: CompanyShare[];
-  moreContractors: number;
   sectors: SectorSpend[];
   sectorsOther: SectorSpend | null; // „… още CPV категории" rollup of the long tail
   procedureMix: ProcedureSlice[];
@@ -434,6 +412,7 @@ export interface NetworkCounterparty {
   authoritySlug: string;
   companyLabel: string;
   companySlug: string;
+  companyKind: 'company' | 'consortium'; // profile tables badge consortiums („обединение“)
   valueEur: number;
   contracts: number;
 }

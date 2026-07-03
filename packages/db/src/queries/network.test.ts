@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getEntityCounterparties, getEntityNetwork } from './network';
+import { NETWORK_GRAPH_MAX, getEntityCounterparties, getEntityNetwork } from './network';
 
 // Fake D1 keyed by SQL markers (same approach as the other query tests). Verifies the ego-network
 // shaping: centre + hop-1 neighbours + hop-2 (top-1 other per neighbour), node de-duplication, the
@@ -229,5 +229,111 @@ describe('getEntityCounterparties', () => {
     );
     // Decodes to null → treated as page 1 (no Prev), not a mis-anchored page.
     expect(onX.prevCursor).toBeNull();
+  });
+});
+
+// ── Explicit graph membership (options.neighbors — the profile pages' ?net selection) ────────────
+// A param-aware fake: unlike fakeDb() above it APPLIES the bound IN-list, so these tests prove the
+// narrowing itself (exact edge counts / exact ids), not just the SQL shape.
+
+function pair(bidder: string, won: number) {
+  return {
+    authority_id: 'auth:C',
+    bidder_id: bidder,
+    authority_name: 'Център Институция',
+    bidder_name: `Фирма ${bidder}`,
+    bidder_kind: 'company',
+    won_eur: won,
+    contracts: 1,
+  };
+}
+const SEL_PAIRS = Array.from({ length: 10 }, (_, i) => pair(`eik:P${i + 1}`, 10_000 - i * 100));
+
+function selectionDb(capture?: { inList?: string[]; limit?: number }): D1Database {
+  return {
+    prepare(sql: string) {
+      let binds: unknown[] = [];
+      const stmt = {
+        bind(...args: unknown[]) {
+          binds = args;
+          return stmt;
+        },
+        async all<T>() {
+          // hop-1 explicit membership: WHERE authority_id = ? AND bidder_id IN (…) — check FIRST
+          // (its ORDER BY also matches the default hop-1 marker below).
+          if (sql.includes('AND bidder_id IN')) {
+            const ids = binds.slice(1, -1) as string[];
+            const limit = binds[binds.length - 1] as number;
+            if (capture) {
+              capture.inList = ids;
+              capture.limit = limit;
+            }
+            return {
+              results: SEL_PAIRS.filter((r) => ids.includes(r.bidder_id)).slice(0, limit) as T[],
+            };
+          }
+          if (sql.includes('WHERE bidder_id IN')) return { results: [] as T[] }; // hop 2: none
+          if (sql.includes('won_eur DESC, bidder_id'))
+            return { results: SEL_PAIRS.slice(0, binds[binds.length - 1] as number) as T[] };
+          return { results: [] as T[] };
+        },
+        async first<T>() {
+          if (sql.includes('FROM authority_totals WHERE authority_id')) return CENTER_AUTH as T;
+          if (sql.includes('COUNT(*)')) return { n: SEL_PAIRS.length } as T;
+          return null as T;
+        },
+      };
+      return stmt;
+    },
+  } as unknown as D1Database;
+}
+
+describe('getEntityNetwork with explicit neighbors (?net selection)', () => {
+  const p = { kind: 'authority', id: 'auth:C' } as const;
+
+  it('renders exactly the selected set — one IN-list read, exact edge counts', async () => {
+    // P2, P9, P10 — includes counterparties far below the default top-6 cut.
+    const { nodes, edges, counterpartyTotal } = await getEntityNetwork(selectionDb(), p, {
+      includeCenterOptions: false,
+      neighbors: ['eik:P2', 'eik:P9', 'eik:P10'],
+    });
+    expect(edges).toHaveLength(3); // exactly the selection — not the top-6 default
+    expect(edges.map((e) => e.to).sort()).toEqual(['eik:P10', 'eik:P2', 'eik:P9']);
+    expect(nodes.map((n) => n.id).sort()).toEqual(['auth:C', 'eik:P10', 'eik:P2', 'eik:P9']);
+    expect(nodes.find((n) => n.id === 'eik:P1')).toBeUndefined(); // top-1 by value NOT drawn
+    expect(counterpartyTotal).toBe(10); // the full degree is still reported
+  });
+
+  it('keeps the default top-6 when no selection is passed', async () => {
+    const { edges } = await getEntityNetwork(selectionDb(), p, { includeCenterOptions: false });
+    expect(edges).toHaveLength(6);
+    expect(edges.map((e) => e.to)).toEqual([
+      'eik:P1',
+      'eik:P2',
+      'eik:P3',
+      'eik:P4',
+      'eik:P5',
+      'eik:P6',
+    ]);
+  });
+
+  it(`hard-caps the selection at NETWORK_GRAPH_MAX (${NETWORK_GRAPH_MAX}) inside the query layer`, async () => {
+    const capture: { inList?: string[]; limit?: number } = {};
+    const { edges } = await getEntityNetwork(selectionDb(capture), p, {
+      includeCenterOptions: false,
+      neighbors: SEL_PAIRS.map((r) => r.bidder_id), // 10 requested
+    });
+    expect(capture.inList).toHaveLength(NETWORK_GRAPH_MAX); // the SQL bound, not just UI courtesy
+    expect(capture.limit).toBe(NETWORK_GRAPH_MAX);
+    expect(edges).toHaveLength(NETWORK_GRAPH_MAX);
+  });
+
+  it('silently drops selected ids that are not actual counterparties', async () => {
+    const { edges } = await getEntityNetwork(selectionDb(), p, {
+      includeCenterOptions: false,
+      neighbors: ['eik:P3', 'eik:NOPE'],
+    });
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.to).toBe('eik:P3');
   });
 });
