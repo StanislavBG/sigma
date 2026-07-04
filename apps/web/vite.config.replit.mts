@@ -28,4 +28,12 @@ export default defineConfig({
     host: true,
     port: 5180,
   },
+  preview: {
+    // scripts/serve.mjs serves the built SSR app with `vite preview --config vite.config.replit.mts`
+    // behind Replit's TLS-terminating proxy, which forwards a dynamic host (sigma-plus.replit.app or a
+    // custom domain). Vite's preview host allowlist would otherwise block it ("This host is not
+    // allowed"). The app is public and read-only, so disabling the host check here is safe and avoids
+    // hardcoding the deploy domain — mirrors the `preview` block in vite.config.ts.
+    allowedHosts: true,
+  },
 });
