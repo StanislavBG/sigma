@@ -130,7 +130,7 @@ export function ComboTrendChart({
       {hp && hover != null && (
         <div
           className="combo-tip"
-          role="status"
+          aria-hidden="true"
           style={{
             // clamp so the centred tooltip never overflows the panel/viewport at the plot's edges
             left: `clamp(84px, ${((x(hover) / W) * 100).toFixed(1)}%, calc(100% - 84px))`,
