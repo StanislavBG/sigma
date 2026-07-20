@@ -75,7 +75,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     const year = yearRaw && /^20\d\d$/.test(yearRaw) ? yearRaw : null;
     // Repeatable ?cpv — the multi-select CPV facet. Validated + bounded by cpvGroupSelection so
     // hostile input can neither poison the SQL scope nor mint unbounded cache-key variants (CWE-349).
-    const cpvSel = cpvGroupSelection(sp);
+    // Sorted so a reordered ?cpv= URL (same selection, different param order) collapses onto one
+    // canonical edge-cache key, matching how hrefToggleCpv writes the set back out sorted.
+    const cpvSel = cpvGroupSelection(sp).sort();
 
     const [trend, cohorts, contracts, kpis] = await Promise.all([
       // Compact quarterly picker for the cross lens / year cards; the lenses render no dashboard, so
